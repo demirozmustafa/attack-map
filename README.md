@@ -12,6 +12,8 @@ pfSense / OPNsense / FortiGate / Suricata
    Tarayıcı: harita · ilk 7 ülke · saldırı türleri · olay akışı · Ayarlar
 ```
 
+> **WordPress sitesinde mi göstermek istiyorsunuz?** Aynı harita bir WordPress eklentisi olarak da var: [wordpress/](wordpress/README.md)
+
 ## Kurulum
 
 ### Linux sunucu (önerilen)

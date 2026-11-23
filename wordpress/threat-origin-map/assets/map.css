@@ -1,0 +1,81 @@
+/* Threat Origin Map — scoped to .tom-root so the WordPress theme and this map leave each other alone.
+   Layout: KPI strip, map stage left, three intel panels right; one column when the container is narrow. */
+.tom-root{
+  --bg:#0B1220; --panel:#111A2C; --line:#1F2A40; --land:#2B3A57; --fg:#DCE4F2; --muted:#7D8AA6;
+  --target:#59D8E6; --brute:#F2A541; --web:#F2545B; --scan:#8FA7FF; --ddos:#C77DFF; --c2:#5FD39A;
+  --display:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark; container-type:inline-size;
+  background:var(--bg); color:var(--fg); font:14px/1.45 var(--body); border-radius:8px; padding:16px;
+  max-width:100%; text-align:left; letter-spacing:normal;
+}
+.tom-root *,.tom-root *::before,.tom-root *::after{box-sizing:border-box}
+.tom-root:fullscreen{border-radius:0;overflow:auto}
+.tom-root .tom-app{display:grid;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:auto minmax(0,1fr);gap:12px;height:var(--tom-h,720px)}
+.tom-root:fullscreen .tom-app{height:100%}
+.tom-root .tom-head{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;margin:0;padding:0;background:none;border:0}
+.tom-root .tom-brand{display:flex;flex-direction:column;gap:2px;margin-right:auto;min-width:0}
+.tom-root .tom-eyebrow{font:11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.tom-root .tom-h1{font:700 clamp(20px,2.4vw,28px)/1.2 var(--display);margin:0;padding:0;color:var(--fg);letter-spacing:.01em;display:flex;flex-wrap:wrap;align-items:center;gap:12px;text-wrap:balance;text-transform:none;border:0}
+.tom-root .tom-h1::before,.tom-root .tom-h1::after,.tom-root .tom-panel h3::before,.tom-root .tom-panel h3::after{content:none}
+.tom-root .tom-live{display:inline-flex;align-items:center;gap:6px;font:500 11px var(--mono);letter-spacing:.14em;padding:3px 9px 3px 8px;border:1px solid var(--line);color:var(--muted);border-radius:3px}
+.tom-root .tom-live i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.tom-root .tom-live[data-s="live"]{color:var(--web);border-color:color-mix(in srgb,var(--web) 60%,transparent);background:color-mix(in srgb,var(--web) 12%,transparent)}
+.tom-root .tom-live[data-s="live"] i{background:var(--web);animation:tom-blink 1.2s infinite}
+.tom-root .tom-live[data-s="down"]{color:var(--brute);border-color:color-mix(in srgb,var(--brute) 60%,transparent)}
+.tom-root .tom-live[data-s="down"] i{background:var(--brute)}
+@keyframes tom-blink{50%{opacity:.25}}
+.tom-root .tom-kpis{display:flex;flex-wrap:wrap;gap:8px}
+.tom-root .tom-kpi{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 12px;min-width:104px}
+.tom-root .tom-kpi b{display:block;font:600 22px/1.1 var(--display);font-variant-numeric:tabular-nums;color:var(--fg)}
+.tom-root .tom-kpi span{font:10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.tom-root .tom-ctrls{display:flex;gap:8px;flex-wrap:wrap}
+.tom-root .tom-btn{font:500 12px/1.2 var(--mono);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 12px;cursor:pointer;text-decoration:none;box-shadow:none;text-transform:none;letter-spacing:normal;min-height:0;width:auto;margin:0}
+.tom-root .tom-btn:hover{border-color:var(--muted);color:var(--fg);background:var(--panel)}
+.tom-root .tom-btn:focus-visible{outline:2px solid var(--target);outline-offset:2px}
+.tom-root .tom-btn[hidden]{display:none}
+.tom-root .tom-banner{position:absolute;left:50%;top:12px;transform:translateX(-50%);max-width:calc(100% - 24px);font:12px var(--body);padding:8px 12px;border-radius:4px;
+  border:1px solid color-mix(in srgb,var(--brute) 55%,transparent);background:color-mix(in srgb,var(--panel) 90%,var(--brute));color:var(--fg);z-index:2}
+.tom-root .tom-banner[hidden]{display:none}
+.tom-root .tom-banner a{color:var(--target)}
+.tom-root .tom-stage{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:340px;min-width:0;margin:0}
+.tom-root .tom-stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;max-width:none}
+.tom-root .tom-legend{position:absolute;left:12px;bottom:10px;display:flex;flex-wrap:wrap;gap:6px 14px;font:11px var(--mono);color:var(--muted);
+  background:color-mix(in srgb,var(--panel) 80%,transparent);padding:6px 10px;border-radius:4px;max-width:calc(100% - 24px)}
+.tom-root .tom-legend span{display:inline-flex;align-items:center;gap:6px}
+.tom-root .tom-legend i{width:14px;height:2px;border-radius:1px}
+.tom-root .tom-sim{position:absolute;right:12px;top:10px;font:10.5px var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;text-align:right;max-width:60%}
+.tom-root .tom-side{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;margin:0;padding:0;background:none;border:0}
+.tom-root .tom-panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;min-width:0}
+.tom-root .tom-panel h3{font:600 13px/1.3 var(--display);letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px;padding:0;color:var(--fg);display:flex;justify-content:space-between;align-items:baseline;gap:8px;border:0}
+.tom-root .tom-panel h3 small{font:400 10.5px var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:none}
+.tom-root .tom-rows{display:grid;gap:7px}
+.tom-root .tom-row{display:grid;grid-template-columns:26px minmax(0,1fr) 64px;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+.tom-root .tom-row .cc{font:500 11px var(--mono);color:var(--muted)}
+.tom-root .tom-row .nm{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;padding-bottom:5px}
+.tom-root .tom-row .nm::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:var(--w,0%);background:var(--brute);border-radius:1px;transition:width .5s}
+.tom-root .tom-row .ct{font:500 12px var(--mono);text-align:right}
+.tom-root .tom-stack{display:flex;height:8px;border-radius:2px;overflow:hidden;gap:2px;margin-bottom:10px;background:var(--line)}
+.tom-root .tom-stack div{transition:flex-grow .5s}
+.tom-root .tom-types{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12.5px}
+.tom-root .tom-types div{display:flex;align-items:center;gap:7px;min-width:0}
+.tom-root .tom-types i{width:8px;height:8px;border-radius:2px;flex:none}
+.tom-root .tom-types em{font:normal 500 11.5px var(--mono);color:var(--muted);margin-left:auto}
+.tom-root .tom-feed{flex:1;display:flex;flex-direction:column;min-height:180px}
+.tom-root .tom-feedbox{flex:1;overflow:auto;min-height:0}
+.tom-root table{width:100%;border-collapse:collapse;border:0;margin:0;font:11.5px var(--mono);font-variant-numeric:tabular-nums;background:none;color:var(--fg)}
+.tom-root th{text-align:left;font-weight:500;color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:0 6px 6px 0;position:sticky;top:0;background:var(--panel);border:0}
+.tom-root td{padding:5px 6px 5px 0;border:0;border-top:1px solid var(--line);white-space:nowrap;background:none}
+.tom-root tbody tr:nth-child(odd) td,.tom-root tbody tr:hover td{background:none}
+.tom-root td.t{border-left:2px solid var(--c,var(--muted));padding-left:6px}
+.tom-root tr.d td{border-top:0;padding-top:0;color:var(--muted);font-size:10.5px;max-width:0;overflow:hidden;text-overflow:ellipsis}
+.tom-root tr.new td{animation:tom-flash 1s ease-out}
+@keyframes tom-flash{from{background:color-mix(in srgb,var(--c,#fff) 18%,transparent)}to{background:transparent}}
+.tom-root .tom-note{font-size:11.5px;color:var(--muted);margin:8px 0 0;line-height:1.5}
+@container (max-width:900px){
+  .tom-root .tom-app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;height:auto}
+  .tom-root .tom-stage{aspect-ratio:16/10;min-height:0}
+  .tom-root .tom-feedbox{max-height:340px}
+}
+@media (prefers-reduced-motion:reduce){.tom-root .tom-live i{animation:none!important}.tom-root tr.new td{animation:none}}

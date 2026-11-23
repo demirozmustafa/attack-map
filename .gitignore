@@ -5,3 +5,4 @@ eve/
 __pycache__/
 *.pyc
 *.mmdb
+*.zip

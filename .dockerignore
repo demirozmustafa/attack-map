@@ -6,3 +6,5 @@ __pycache__/
 test_parsers.py
 install.*
 README.md
+wordpress/
+.git/
