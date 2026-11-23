@@ -130,6 +130,7 @@ Kurulumu sıfırdan yapmak için (şifreyi unuttuysanız): `docker compose down 
 - **Suricata `eve.json` okuma izni:** Konteyner 10001 numaralı kullanıcıyla çalışır. `eve.json` yalnızca root tarafından okunabiliyorsa `chmod o+r` verin ya da syslog ile gönderin.
 - **Ülke bilgisi:** Gösterilen ülke saldırganın gerçek yeri değil, IP'nin kayıtlı olduğu yerdir. VPN, Tor ve bulut sunucuları yaygındır.
 - **Sayaçlar:** Bellekte tutulur. Konteyner yeniden başlarsa "Today" sıfırlanır.
+- **Disk kullanımı:** Ham log ve olaylar diske yazılmaz; yalnızca bellekte son 15 dakika ve günlük sayaçlar tutulur. Diskte sadece ayarlar ve GeoIP veritabanı (~70 MB) durur. Konteynerin kendi çıktısı `docker-compose.yml` içinde 10 MB × 3 dosya ile sınırlıdır.
 - **İnternet gereksinimi:** Harita sayfası yazı tiplerini Google Fonts'tan, d3'ü jsDelivr'den yükler. İnternetsiz bir SOC ekranında bu dosyaların yerel kopyası gerekir.
 - **Testler:** `python -m unittest test_parsers.py`
 - **Lisans notu:** Bu ürün GeoLite2 verisi kullanır (MaxMind, https://www.maxmind.com).

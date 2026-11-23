@@ -7,7 +7,9 @@ defined('ABSPATH') || exit;
 
 const TOM_TYPES = ['brute', 'web', 'scan', 'ddos', 'c2'];
 const TOM_SOURCES = ['filterlog', 'suricata', 'fortigate'];
-const TOM_DB_VERSION = 1;
+const TOM_DB_VERSION = 2;
+const TOM_MAX_EVENTS = 20000;       // drawn events kept in the database (hard cap)
+const TOM_MAX_IPS_PER_DAY = 200000; // unique-IP rows per day; the KPI shows "200,000+" beyond this
 
 /* ------------------------------------------------------------------ settings */
 
@@ -18,6 +20,7 @@ function tom_defaults() {
         'lon' => 28.98,
         'title' => 'Where attackers come from',
         'allowed_senders' => '',
+        'locations' => [], // extra sites: ['name','lat','lon','senders' (newline/comma list)]; unmatched senders go to the main site
         'sources' => ['filterlog' => 1, 'suricata' => 1, 'fortigate' => 1],
         'eve_file' => '',
         'syslog_port' => 5514,
@@ -95,6 +98,7 @@ function tom_install_tables() {
   proto varchar(8) NOT NULL DEFAULT '',
   detail varchar(160) NOT NULL DEFAULT '',
   sensor varchar(32) NOT NULL DEFAULT '',
+  loc smallint(5) unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY  (id),
   KEY ts (ts)
 ) $cs;");
@@ -215,7 +219,7 @@ function tom_parse_forti($msg) {
         'port' => tom_int($kv['dstport'] ?? null),
         'proto' => ['6' => 'tcp', '17' => 'udp', '1' => 'icmp'][$p] ?? strtolower($p),
         'detail' => $detail,
-        'sensor' => 'fortigate',
+        'sensor' => substr(($kv['devname'] ?? '') ?: 'fortigate', 0, 32), // several FortiGates: show which one saw it
         'text' => $text,
     ];
 }
@@ -279,14 +283,53 @@ function tom_ip_in_cidr($ip, $cidr) {
     return (ord($net[$bytes]) & $mask) === (ord($addr[$bytes]) & $mask);
 }
 
-/** Empty allow list = accept any sender (the CloudPanel/cloud firewall should still restrict the port). */
-function tom_sender_allowed($addr, $list) {
-    $list = trim((string) $list);
-    if ($list === '') {
+/** Main site first, then the extra locations. An event's "loc" is an index into this list. */
+function tom_sites($s = null) {
+    $s = $s ?: tom_settings();
+    $out = [['name' => $s['site_name'], 'lat' => (float) $s['lat'], 'lon' => (float) $s['lon']]];
+    foreach ((array) $s['locations'] as $l) {
+        $out[] = ['name' => (string) $l['name'], 'lat' => (float) $l['lat'], 'lon' => (float) $l['lon']];
+    }
+    return $out;
+}
+
+function tom_split_list($list) {
+    return preg_split('/[\s,]+/', trim((string) $list), -1, PREG_SPLIT_NO_EMPTY);
+}
+
+function tom_in_list($addr, $list) {
+    foreach (tom_split_list($list) as $entry) {
+        if (tom_ip_in_cidr($addr, $entry)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Index into tom_sites() for a sender address; 0 (main site) when no location lists it. */
+function tom_location_for($addr, $s = null) {
+    $s = $s ?: tom_settings();
+    foreach (array_values((array) $s['locations']) as $i => $l) {
+        if (tom_in_list($addr, $l['senders'] ?? '')) {
+            return $i + 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Empty allow list = accept any sender (the server/cloud firewall should still restrict the port).
+ * Otherwise the allow list plus every IP written under a location is accepted.
+ */
+function tom_sender_allowed($addr, $s) {
+    if (trim((string) $s['allowed_senders']) === '') {
         return true;
     }
-    foreach (preg_split('/[\s,]+/', $list) as $entry) {
-        if ($entry !== '' && tom_ip_in_cidr($addr, $entry)) {
+    if (tom_in_list($addr, $s['allowed_senders'])) {
+        return true;
+    }
+    foreach ((array) $s['locations'] as $l) {
+        if (tom_in_list($addr, $l['senders'] ?? '')) {
             return true;
         }
     }
@@ -484,6 +527,8 @@ function tom_ingest_lines(array $lines, $sender, $sensor_label = '') {
     $s = tom_settings();
     $c = ['received' => 0, 'parsed' => 0, 'ignored' => 0];
     $recs = [];
+    $addr = preg_replace('/^http:/', '', (string) $sender);
+    $loc = filter_var($addr, FILTER_VALIDATE_IP) ? tom_location_for($addr, $s) : 0;
     foreach ($lines as $line) {
         $line = trim((string) $line);
         if ($line === '') {
@@ -496,6 +541,7 @@ function tom_ingest_lines(array $lines, $sender, $sensor_label = '') {
             if ($sensor_label !== '') {
                 $rec['sensor'] = $sensor_label;
             }
+            $rec['loc'] = $loc;
             $recs[] = $rec;
         } else {
             $c['ignored']++;
@@ -566,6 +612,7 @@ function tom_ingest_records(array $recs, $geo_override = null) {
             $rec['port'] ?? null, substr((string) ($rec['proto'] ?? ''), 0, 8),
             mb_substr(wp_check_invalid_utf8((string) ($rec['detail'] ?? '')), 0, 160),
             substr((string) ($rec['sensor'] ?? ''), 0, 32),
+            (int) ($rec['loc'] ?? 0),
         ];
     }
     foreach (array_chunk(array_values($counts), 200) as $chunk) {
@@ -576,21 +623,30 @@ function tom_ingest_records(array $recs, $geo_override = null) {
         $wpdb->query("INSERT INTO {$t['counts']} (minute,cc,type,country,n) VALUES " . implode(',', $vals)
             . ' ON DUPLICATE KEY UPDATE n=n+VALUES(n), country=VALUES(country)');
     }
+    $ipc = get_option('tom_ips_count');
+    $ipc = is_array($ipc) && (int) $ipc[0] === $day ? $ipc : [$day, 0];
+    if ($ipc[1] >= TOM_MAX_IPS_PER_DAY) {
+        $ips = []; // daily unique-IP list is full; counts and events still go in
+    }
     foreach (array_chunk(array_keys($ips), 500) as $chunk) {
         $vals = [];
         foreach ($chunk as $ip) {
             $vals[] = $wpdb->prepare('(%d,%s)', $day, $ip);
         }
         $wpdb->query("INSERT IGNORE INTO {$t['ips']} (day,ip) VALUES " . implode(',', $vals));
+        $ipc[1] += (int) $wpdb->rows_affected;
+    }
+    if ($ips) {
+        update_option('tom_ips_count', $ipc, false);
     }
     foreach (array_chunk($events, 200) as $chunk) {
         $vals = [];
         foreach ($chunk as $e) {
             $port = $e[7] === null ? 'NULL' : (string) (int) $e[7];
             $vals[] = $wpdb->prepare('(%d,%s,%s,%s,%f,%f,%s,', $e[0], $e[1], $e[2], $e[3], $e[4], $e[5], $e[6])
-                . $port . $wpdb->prepare(',%s,%s,%s)', $e[8], $e[9], $e[10]);
+                . $port . $wpdb->prepare(',%s,%s,%s,%d)', $e[8], $e[9], $e[10], $e[11]);
         }
-        $wpdb->query("INSERT INTO {$t['events']} (ts,ip,cc,country,lat,lon,type,port,proto,detail,sensor) VALUES " . implode(',', $vals));
+        $wpdb->query("INSERT INTO {$t['events']} (ts,ip,cc,country,lat,lon,type,port,proto,detail,sensor,loc) VALUES " . implode(',', $vals));
     }
     $out['stored'] = count($events);
     if ($counts) {
@@ -686,12 +742,14 @@ function tom_inject_synthetic($n, $sensor, $span_s = 0.0) {
     $recs = [];
     $geo = [];
     $now = microtime(true);
+    $nsites = count(tom_sites());
     foreach (tom_synthetic_lines($n) as $i => $line) {
         $rec = tom_parse_line($line);
         if (!$rec) {
             continue;
         }
         $rec['sensor'] = $sensor;
+        $rec['loc'] = $nsites > 1 ? mt_rand(0, $nsites - 1) : 0;
         $rec['ts'] = $now - $span_s + ($n > 1 ? $span_s * $i / ($n - 1) : $span_s);
         $geo[count($recs)] = tom_synthetic_geo();
         $recs[] = $rec;
@@ -770,7 +828,7 @@ function tom_events_after($after, $mask) {
     $t = tom_tables();
     $min_ts = (int) ((time() - 3600) * 1000);
     $rows = $wpdb->get_results($wpdb->prepare(
-        "SELECT id, ts, ip, cc, country, lat, lon, type, port, proto, detail, sensor FROM {$t['events']} WHERE id > %d AND ts >= %d ORDER BY id DESC LIMIT 150",
+        "SELECT id, ts, ip, cc, country, lat, lon, type, port, proto, detail, sensor, loc FROM {$t['events']} WHERE id > %d AND ts >= %d ORDER BY id DESC LIMIT 150",
         $after, $min_ts), ARRAY_A) ?: [];
     $rows = array_reverse($rows);
     foreach ($rows as &$r) {
@@ -779,6 +837,7 @@ function tom_events_after($after, $mask) {
         $r['lat'] = (float) $r['lat'];
         $r['lon'] = (float) $r['lon'];
         $r['port'] = $r['port'] === null ? null : (int) $r['port'];
+        $r['loc'] = (int) $r['loc'];
         if ($mask) {
             $r['ip'] = tom_mask_ip($r['ip']);
         }
@@ -788,14 +847,22 @@ function tom_events_after($after, $mask) {
 
 /* ------------------------------------------------------------------ housekeeping */
 
+/**
+ * Keeps the database small no matter how hard the site is attacked:
+ * drawn events = last 24 h and at most TOM_MAX_EVENTS rows (the map only shows the last hour),
+ * per-minute counters = 2 days, unique-IP list = today and yesterday.
+ * Runs hourly from WP-Cron and every 10 minutes from the collector.
+ */
 function tom_cleanup() {
     global $wpdb;
     $t = tom_tables();
-    $s = tom_settings();
-    $keep = max(1, (int) $s['retention_days']);
-    $wpdb->query($wpdb->prepare("DELETE FROM {$t['events']} WHERE ts < %d", (time() - $keep * 86400) * 1000));
-    $wpdb->query($wpdb->prepare("DELETE FROM {$t['counts']} WHERE minute < %d", (int) floor(time() / 60) - max(2, $keep) * 1440));
-    $wpdb->query($wpdb->prepare("DELETE FROM {$t['ips']} WHERE day < %d", (int) wp_date('Ymd', time() - 2 * 86400)));
+    $wpdb->query($wpdb->prepare("DELETE FROM {$t['events']} WHERE ts < %d", (time() - 86400) * 1000));
+    $cut = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$t['events']} ORDER BY id DESC LIMIT 1 OFFSET %d", TOM_MAX_EVENTS));
+    if ($cut) {
+        $wpdb->query($wpdb->prepare("DELETE FROM {$t['events']} WHERE id <= %d", $cut));
+    }
+    $wpdb->query($wpdb->prepare("DELETE FROM {$t['counts']} WHERE minute < %d", (int) floor(time() / 60) - 2 * 1440));
+    $wpdb->query($wpdb->prepare("DELETE FROM {$t['ips']} WHERE day < %d", (int) wp_date('Ymd', time() - 86400)));
 }
 
 function tom_geo_auto_update() {

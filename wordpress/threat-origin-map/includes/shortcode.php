@@ -43,6 +43,7 @@ function tom_shortcode($atts) {
         <div class="tom-kpi"><b data-r="kCountries">–</b><span>Countries</span></div>
       </div>
       <div class="tom-ctrls">
+        <button type="button" class="tom-btn" data-r="view" aria-pressed="false">Globe</button>
         <button type="button" class="tom-btn" data-r="pause">Pause</button>
         <button type="button" class="tom-btn" data-r="full">Full screen</button>
         <a class="tom-btn" data-r="settings" hidden>Settings</a>

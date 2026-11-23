@@ -59,6 +59,7 @@ $rejected = []; // sender => count
 $last_flush = microtime(true);
 $last_refresh = microtime(true);
 $last_beat = 0;
+$last_cleanup = 0;
 
 function tom_bind($port) {
     $sock = @stream_socket_server("udp://0.0.0.0:$port", $errno, $errstr, STREAM_SERVER_BIND);
@@ -138,7 +139,7 @@ while ($running) {
             if (preg_match('/^\[?([^\]]+?)\]?:\d+$/', $peer, $m)) {
                 $addr = $m[1];
             }
-            if (!tom_sender_allowed($addr, $s['allowed_senders'])) {
+            if (!tom_sender_allowed($addr, $s)) {
                 $rejected[$addr] = ($rejected[$addr] ?? 0) + 1;
             } else {
                 foreach (preg_split('/\r?\n/', $data) as $line) {
@@ -171,6 +172,14 @@ while ($running) {
             tom_status_add(['rejected' => $cnt], (string) $addr, false);
         }
         $batches = $rejected = [];
+        if ($now - $last_cleanup >= 600) { // keeps the tables bounded even when WP-Cron never runs
+            $last_cleanup = $now;
+            try {
+                tom_cleanup();
+            } catch (Throwable $ex) {
+                tom_log('Temizlik hatası: ' . $ex->getMessage());
+            }
+        }
         if ($now - $last_beat >= 10) {
             $last_beat = $now;
             update_option('tom_collector', ['last' => time(), 'port' => $port, 'pid' => getmypid(), 'eve' => $eve['path']], false);

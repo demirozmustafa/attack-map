@@ -52,7 +52,7 @@ Log gelmeden denemek için Ayarlar → Görünüm'de **Demo verisi**'ni açın y
 |---|---|
 | **Durum** | Toplayıcı servisi çalışıyor mu, GeoIP hazır mı, alınan/işlenen satırlar. Log gönderen cihazlar listelenir. İzinli olmayan bir cihaz **İzin ver** ile tek tıkla eklenir. |
 | **Cihaz bağlama** | systemd kurulum komutu, port açma, cihaz başına adım adım ayar. HTTP ile gönderim için token da burada. |
-| **Konum ve başlık** | Haritadaki hedef nokta (hazır şehirler ya da enlem/boylam) |
+| **Konumlar ve başlık** | Ana konum ve istediğiniz kadar ek konum (şube, veri merkezi). Her ek konuma o konumdaki firewall'ların IP'leri yazılır; o cihazların saldırıları haritada kendi konumuna iner. Hiçbir konuma yazılmamış cihazlar ana konuma gider. |
 | **Log kaynakları** | İzinli gönderici IP'leri/ağları, log türlerini açma/kapama, syslog portu, Suricata `eve.json` yolu |
 | **GeoIP** | MaxMind bilgileri, *Şimdi indir*, haftalık otomatik güncelleme, `.mmdb` elle yükleme |
 | **Görünüm ve erişim** | Ziyaretçiye göster / yalnızca üyeler, IP maskeleme, demo, saniyedeki en fazla yay, saklama süresi |
@@ -93,7 +93,7 @@ Saldırı türü önce IDS imzasına bakılarak belirlenir:
 - **Çizilen olaylar:** Ayrı bir tabloya en fazla *saniyedeki en fazla yay* kadar olay yazılır (varsayılan 40). Yoğun saldırıda veritabanı şişmez; haritada "High volume · map shows a sample" yazar.
 - **Toplu yazma:** Toplayıcı saniyede bir, toplu INSERT ile yazar.
 - **Harita güncellemesi:** Harita 2 saniyede bir yeni olayları çeker, sekme arka plandayken 15 saniyede bir. İstatistikler 2 saniye önbelleğe alınır.
-- **Temizlik:** Eski olaylar her gün WP-Cron ile silinir (varsayılan 7 gün). Sitenize az ziyaretçi geliyorsa CloudPanel'de gerçek bir cron tanımlayın: `*/5 * * * * php8.3 /home/KULLANICI/htdocs/ALANADI/wp-cron.php`
+- **Disk sınırı:** Ham log hiçbir yere yazılmaz. Veritabanında çizilen olaylardan en fazla son 24 saat ve 20.000 kayıt, dakikalık sayaçlardan son 2 gün, benzersiz IP listesinden bugün ve dün (günde en fazla 200.000) tutulur. Fazlası saatte bir WP-Cron ile, ayrıca toplayıcı çalışırken 10 dakikada bir silinir. Toplayıcı yalnızca açılış ve hata mesajı yazar; bunlar journald'nin kendi boyut sınırıyla döner.
 
 ## Kaldırma
 

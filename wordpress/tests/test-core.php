@@ -52,9 +52,16 @@ foreach (['10.1.2.3', '192.168.1.1', '172.20.0.1', '127.0.0.1', '100.64.1.1', '2
     eq(tom_is_public_ip($ip), false, "non-public $ip");
 }
 eq(tom_is_public_ip('2a03:2880:f003:c07:face:b00c::2'), true, 'public v6');
-eq(tom_sender_allowed('198.51.100.7', "203.0.113.1\n198.51.100.0/24"), true, 'allow cidr');
-eq(tom_sender_allowed('198.51.101.7', "203.0.113.1\n198.51.100.0/24"), false, 'reject outside');
-eq(tom_sender_allowed('1.2.3.4', ''), true, 'empty list allows all');
+$cfg = ['allowed_senders' => "203.0.113.1\n198.51.100.0/24", 'site_name' => 'HQ', 'lat' => 41, 'lon' => 29,
+    'locations' => [['name' => 'ANK', 'lat' => 39.9, 'lon' => 32.9, 'senders' => '192.0.2.10, 192.0.2.11'],
+                    ['name' => 'FRA', 'lat' => 50.1, 'lon' => 8.7, 'senders' => '10.20.0.0/16']]];
+eq(tom_sender_allowed('198.51.100.7', $cfg), true, 'allow cidr');
+eq(tom_sender_allowed('198.51.101.7', $cfg), false, 'reject outside');
+eq(tom_sender_allowed('192.0.2.11', $cfg), true, 'location sender is allowed');
+eq(tom_sender_allowed('1.2.3.4', ['allowed_senders' => '', 'locations' => $cfg['locations']]), true, 'empty list allows all');
+eq([tom_location_for('192.0.2.10', $cfg), tom_location_for('10.20.5.5', $cfg), tom_location_for('203.0.113.1', $cfg)], [1, 2, 0], 'location mapping');
+eq(array_column(tom_sites($cfg), 'name'), ['HQ', 'ANK', 'FRA'], 'sites list');
+eq(tom_parse_line('devname="FG-Ankara" srcip=91.240.118.172 dstport=22 proto=6 action="deny"')['sensor'], 'FG-Ankara', 'fortigate devname');
 eq(tom_mask_ip('185.220.101.5'), '185.220.101.x', 'mask v4');
 
 $mm = $argv[1] ?? '';

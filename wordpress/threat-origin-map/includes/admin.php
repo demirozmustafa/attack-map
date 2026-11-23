@@ -39,6 +39,37 @@ add_action('admin_post_tom_save', function () {
             $s[$k] = round((float) $v, 4);
         }
     }
+    $locs = [];
+    foreach (array_values((array) ($in['locations'] ?? [])) as $i => $l) {
+        $name = mb_substr(sanitize_text_field($l['name'] ?? ''), 0, 60);
+        $la = str_replace(',', '.', trim((string) ($l['lat'] ?? '')));
+        $lo = str_replace(',', '.', trim((string) ($l['lon'] ?? '')));
+        $snd = trim((string) ($l['senders'] ?? ''));
+        if ($name === '' && $la === '' && $lo === '' && $snd === '') {
+            continue; // empty row
+        }
+        $label = $name !== '' ? $name : ($i + 1) . '. ek konum';
+        if ($name === '') {
+            $err[] = "$label: ad boş.";
+        }
+        if (!is_numeric($la) || abs((float) $la) > 90 || !is_numeric($lo) || abs((float) $lo) > 180) {
+            $err[] = "$label: enlem -90..90, boylam -180..180 olmalı.";
+        }
+        $clean = [];
+        foreach (tom_split_list($snd) as $e) {
+            $parts = explode('/', $e, 2);
+            if (filter_var($parts[0], FILTER_VALIDATE_IP) && (!isset($parts[1]) || (ctype_digit($parts[1]) && (int) $parts[1] <= (strpos($parts[0], ':') !== false ? 128 : 32)))) {
+                $clean[] = $e;
+            } else {
+                $err[] = "$label: geçersiz firewall IP'si " . esc_html($e);
+            }
+        }
+        $locs[] = ['name' => $name, 'lat' => round((float) $la, 4), 'lon' => round((float) $lo, 4), 'senders' => implode(', ', array_unique($clean))];
+    }
+    if (count($locs) > 30) {
+        $err[] = 'En fazla 30 ek konum eklenebilir.';
+    }
+    $s['locations'] = $locs;
     $senders = [];
     foreach (preg_split('/[\s,]+/', (string) ($in['allowed_senders'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) as $e) {
         $parts = explode('/', $e, 2);
@@ -70,7 +101,6 @@ add_action('admin_post_tom_save', function () {
     };
     $num('syslog_port', 1024, 65535, 'Syslog portu');
     $num('max_eps', 1, 500, 'Saniyedeki en fazla yay');
-    $num('retention_days', 1, 90, 'Saklama süresi');
     foreach (['public', 'mask_ips', 'demo', 'geo_auto'] as $k) {
         $s[$k] = empty($in[$k]) ? 0 : 1;
     }
@@ -233,11 +263,35 @@ function tom_ago($ts) {
     return wp_date('d.m.Y H:i', (int) $ts);
 }
 
+function tom_preset_select($presets) {
+    echo '<select class="tom-preset"><option value="">Seçin…</option>';
+    foreach ($presets as $n => [$la, $lo]) {
+        echo '<option data-lat="' . esc_attr($la) . '" data-lon="' . esc_attr($lo) . '">' . esc_html($n) . '</option>';
+    }
+    echo '</select>';
+}
+
+function tom_location_row($presets, $i, $l) {
+    $n = 'locations[' . $i . ']';
+    ?>
+      <div class="tom-grid tom-locrow tom-extra">
+        <label>Hazır konum<?php tom_preset_select($presets); ?></label>
+        <label>Konum adı<input type="text" name="<?php echo esc_attr($n); ?>[name]" data-k="name" value="<?php echo esc_attr($l['name']); ?>" maxlength="60" placeholder="ör. Ankara Şube"></label>
+        <label>Enlem<input type="text" name="<?php echo esc_attr($n); ?>[lat]" data-k="lat" value="<?php echo esc_attr($l['lat']); ?>" inputmode="decimal"></label>
+        <label>Boylam<input type="text" name="<?php echo esc_attr($n); ?>[lon]" data-k="lon" value="<?php echo esc_attr($l['lon']); ?>" inputmode="decimal"></label>
+        <label class="wide">Firewall IP'leri <small>(virgülle ayırın; ağ da yazılabilir, ör. 198.51.100.0/24)</small>
+          <input type="text" name="<?php echo esc_attr($n); ?>[senders]" value="<?php echo esc_attr($l['senders']); ?>" placeholder="203.0.113.5, 203.0.113.6"></label>
+        <p class="wide"><button type="button" class="button-link button-link-delete tom-rm-loc">Konumu sil</button></p>
+      </div>
+    <?php
+}
+
 function tom_admin_page() {
     if (!current_user_can('manage_options')) {
         return;
     }
     $s = tom_settings();
+    $sites = tom_sites($s);
     $st = get_option('tom_status');
     $st = is_array($st) ? $st : [];
     $col = tom_collector_state();
@@ -284,9 +338,11 @@ function tom_admin_page() {
     <?php if (empty($st['senders'])): ?>
       <p class="description">Henüz log gelmedi. Toplayıcıyı kurup cihazınızı ayarlayınca burada görünür.</p>
     <?php else: ?>
-      <table class="widefat striped tom-table"><thead><tr><th>Gönderen</th><th>Satır</th><th>İşlenen</th><th>Son</th><th>Durum</th></tr></thead><tbody>
+      <table class="widefat striped tom-table"><thead><tr><th>Gönderen</th><th>Konum</th><th>Satır</th><th>İşlenen</th><th>Son</th><th>Durum</th></tr></thead><tbody>
       <?php foreach ($st['senders'] as $ip => $x): ?>
-        <tr><td><code><?php echo esc_html($ip); ?></code></td><td><?php echo number_format_i18n($x['count']); ?></td><td><?php echo number_format_i18n($x['parsed']); ?></td>
+        <?php $addr = preg_replace('/^http:/', '', (string) $ip);
+              $loc_name = !empty($x['allowed']) && filter_var($addr, FILTER_VALIDATE_IP) ? $sites[tom_location_for($addr, $s)]['name'] : '–'; ?>
+        <tr><td><code><?php echo esc_html($ip); ?></code></td><td><?php echo esc_html($loc_name); ?></td><td><?php echo number_format_i18n($x['count']); ?></td><td><?php echo number_format_i18n($x['parsed']); ?></td>
           <td><?php echo esc_html(tom_ago($x['last'])); ?></td>
           <td><?php if (!empty($x['allowed'])) {
               echo '<span class="ok">İzinli</span>';
@@ -387,15 +443,25 @@ end</pre></div>
     <input type="hidden" name="action" value="tom_save">
 
     <section class="tom-card">
-      <h2>Konum ve başlık</h2>
-      <p class="description">Haritadaki hedef nokta, yani korunan sunucu veya ofis.</p>
+      <h2>Konumlar ve başlık</h2>
+      <p class="description">Saldırı yaylarının indiği noktalar. Birden fazla şubeniz ya da veri merkeziniz varsa her biri için ayrı konum ekleyin; her firewall'un logları kendi konumuna gider.</p>
+      <h3>Ana konum <small>(aşağıdaki konumlara yazılmamış bütün cihazlar)</small></h3>
+      <div class="tom-grid tom-locrow">
+        <label>Hazır konum<?php tom_preset_select($presets); ?></label>
+        <label>Konum adı<input type="text" name="site_name" data-k="name" value="<?php echo esc_attr($s['site_name']); ?>" maxlength="60"></label>
+        <label>Enlem<input type="text" name="lat" data-k="lat" value="<?php echo esc_attr($s['lat']); ?>" inputmode="decimal"></label>
+        <label>Boylam<input type="text" name="lon" data-k="lon" value="<?php echo esc_attr($s['lon']); ?>" inputmode="decimal"></label>
+      </div>
+      <h3>Diğer konumlar</h3>
+      <div id="tom-locs">
+        <?php foreach (array_values((array) $s['locations']) as $i => $l) {
+            tom_location_row($presets, (string) $i, $l);
+        } ?>
+      </div>
+      <template id="tom-loc-tpl"><?php tom_location_row($presets, '__i__', ['name' => '', 'lat' => '', 'lon' => '', 'senders' => '']); ?></template>
+      <p class="tom-row"><button type="button" class="button" id="tom-add-loc">+ Konum ekle</button>
+        <span class="description">Firewall IP'si, cihazın log gönderdiği adrestir; Durum bölümündeki cihaz listesinde görünür. Buraya yazılan IP'ler otomatik olarak izinli sayılır.</span></p>
       <div class="tom-grid">
-        <label>Hazır konum<select id="tom-preset"><option value="">Seçin…</option>
-          <?php foreach ($presets as $n => [$la, $lo]): ?><option data-lat="<?php echo esc_attr($la); ?>" data-lon="<?php echo esc_attr($lo); ?>"><?php echo esc_html($n); ?></option><?php endforeach; ?>
-        </select></label>
-        <label>Konum adı<input type="text" name="site_name" id="tom-name" value="<?php echo esc_attr($s['site_name']); ?>" maxlength="60"></label>
-        <label>Enlem<input type="text" name="lat" id="tom-lat" value="<?php echo esc_attr($s['lat']); ?>" inputmode="decimal"></label>
-        <label>Boylam<input type="text" name="lon" id="tom-lon" value="<?php echo esc_attr($s['lon']); ?>" inputmode="decimal"></label>
         <label class="wide">Harita başlığı<input type="text" name="title" value="<?php echo esc_attr($s['title']); ?>" maxlength="80"></label>
       </div>
     </section>
@@ -438,9 +504,9 @@ end</pre></div>
         <label class="tom-check wide"><input type="checkbox" name="mask_ips" value="1" <?php checked($s['mask_ips']); ?>> Ziyaretçilere IP adreslerinin son kısmını gizle <small>(yöneticiler tam IP görür)</small></label>
         <label class="tom-check wide"><input type="checkbox" name="demo" value="1" <?php checked($s['demo']); ?>> Demo verisi <small>(gerçek log yokken haritayı denemek için; haritada “Demo data” yazar)</small></label>
         <label>Saniyedeki en fazla yay<input type="number" name="max_eps" min="1" max="500" value="<?php echo (int) $s['max_eps']; ?>"></label>
-        <label>Olay saklama süresi (gün)<input type="number" name="retention_days" min="1" max="90" value="<?php echo (int) $s['retention_days']; ?>"></label>
       </div>
-      <p class="description">Yoğun saldırıda tüm olaylar sayılır ama haritaya en fazla bu kadar yay çizilir. Böylece veritabanı şişmez.</p>
+      <p class="description">Yoğun saldırıda tüm olaylar sayılır ama haritaya en fazla bu kadar yay çizilir.
+        Veritabanı sınırlıdır: çizilen olaylardan en fazla son 24 saat ve <?php echo number_format_i18n(TOM_MAX_EVENTS); ?> kayıt, dakikalık sayaçlardan son 2 gün tutulur. Fazlası saatte bir silinir. Ham log hiçbir yere kaydedilmez.</p>
     </section>
 
     <div class="tom-savebar"><?php submit_button('Kaydet', 'primary', 'submit', false); ?></div>
@@ -490,6 +556,9 @@ end</pre></div>
 .tom-grid .wide{grid-column:1/-1}
 .tom-grid legend{font-weight:600;margin-bottom:4px}
 .tom-check{display:flex!important;align-items:center;gap:8px;font-weight:400!important}
+.tom-locrow.tom-extra{border:1px solid #dcdcde;border-radius:4px;padding:10px 12px;background:#f6f7f7}
+#tom-locs{display:grid;gap:10px}
+.tom-locrow p{margin:0}
 .tom-savebar{position:sticky;bottom:0;background:#f0f0f1e6;padding:10px 0;border-top:1px solid #c3c4c7;z-index:5}
 </style>
 <script>
@@ -506,10 +575,17 @@ end</pre></div>
       navigator.clipboard.writeText(t).then(function(){b.textContent='Kopyalandı';setTimeout(function(){b.textContent='Kopyala'},1500)});
     });
   });
-  var p=document.getElementById('tom-preset');
-  if(p)p.addEventListener('change',function(){
-    var o=p.selectedOptions[0]; if(!o||!o.dataset.lat)return;
-    document.getElementById('tom-lat').value=o.dataset.lat; document.getElementById('tom-lon').value=o.dataset.lon; document.getElementById('tom-name').value=o.textContent;
+  var form=document.getElementById('settings'), locs=document.getElementById('tom-locs'), n=locs.children.length;
+  form.addEventListener('change',function(e){
+    if(!e.target.classList.contains('tom-preset'))return;
+    var o=e.target.selectedOptions[0], row=e.target.closest('.tom-locrow'); if(!o||!o.dataset.lat)return;
+    row.querySelector('[data-k=lat]').value=o.dataset.lat; row.querySelector('[data-k=lon]').value=o.dataset.lon;
+    var nm=row.querySelector('[data-k=name]'); if(!nm.value||!row.classList.contains('tom-extra'))nm.value=o.textContent;
+  });
+  form.addEventListener('click',function(e){ if(e.target.classList.contains('tom-rm-loc'))e.target.closest('.tom-locrow').remove(); });
+  document.getElementById('tom-add-loc').addEventListener('click',function(){
+    var html=document.getElementById('tom-loc-tpl').innerHTML.replace(/__i__/g,'n'+(n++));
+    locs.insertAdjacentHTML('beforeend',html); locs.lastElementChild.querySelector('select').focus();
   });
 })();
 </script>

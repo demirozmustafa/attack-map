@@ -32,6 +32,7 @@ function tom_rest_live(WP_REST_Request $req) {
     $after = (int) $req['after'];
     $res = new WP_REST_Response([
         'site' => ['name' => $s['site_name'], 'lat' => (float) $s['lat'], 'lon' => (float) $s['lon']],
+        'sites' => tom_sites($s),
         'events' => tom_events_after($after, !empty($s['mask_ips']) && !$admin),
         'stats' => tom_stats(),
         'admin' => $admin,
