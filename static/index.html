@@ -168,7 +168,7 @@ const land = topojson.feature(LAND, LAND.objects.land);
 const graticule = d3.geoGraticule10();
 const stage = mapC.parentElement;
 let proj, W=0, H=0, dpr=1, R=0, paused=false;
-let site = {name:"", lat:41.01, lon:28.98};
+let site = {name:"", lat:41.01, lon:28.98}, sites=[site];   // sites[0] is the main location
 const store = {get:k=>{try{return localStorage.getItem(k)}catch(e){return null}}, set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 let view = store.get("am-view")==="globe" ? "globe" : "flat";
 const rgba = (hex,a) => {const n=parseInt(hex.replace("#",""),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`};
@@ -272,9 +272,9 @@ const arcs=[], sparks=[], rings=[], spots=new Map();
 function bez(p0,p1,c,t){const u=1-t;return[u*u*p0[0]+2*u*t*c[0]+t*t*p1[0],u*u*p0[1]+2*u*t*c[1]+t*t*p1[1]]}
 function addArc(e, ageMs=0){
   if(arcs.length>260) return;
-  const c=(TYPE[e.type]||TYPE.scan).c, d=d3.geoDistance([e.lon,e.lat],[site.lon,site.lat]);
-  arcs.push({e, c, born:performance.now()-ageMs, dur:1200+Math.random()*900,
-    geo:d3.geoInterpolate([e.lon,e.lat],[site.lon,site.lat]), alt:.06+.32*d/Math.PI});
+  const t=sites[e.loc]||sites[0], c=(TYPE[e.type]||TYPE.scan).c, d=d3.geoDistance([e.lon,e.lat],[t.lon,t.lat]);
+  arcs.push({e, t, c, born:performance.now()-ageMs, dur:1200+Math.random()*900,
+    geo:d3.geoInterpolate([e.lon,e.lat],[t.lon,t.lat]), alt:.06+.32*d/Math.PI});
   const k=e.cc+Math.round(e.lat/2)+","+Math.round(e.lon/2); let s=spots.get(k);
   if(!s){ if(spots.size>300) return; s={lat:e.lat,lon:e.lon,h:0}; spots.set(k,s) }
   s.h=Math.min(s.h+1,40); s.c=c;
@@ -282,7 +282,7 @@ function addArc(e, ageMs=0){
 // Point t∈[0,1] along an arc: a raised Bézier on the flat map, a lifted great circle on the globe.
 function arcPoint(a,t){
   if(view==="flat"){
-    const sp=proj([a.e.lon,a.e.lat]), tp=proj([site.lon,site.lat]); if(!sp||!tp) return null;
+    const sp=proj([a.e.lon,a.e.lat]), tp=proj([a.t.lon,a.t.lat]); if(!sp||!tp) return null;
     const d=Math.hypot(tp[0]-sp[0],tp[1]-sp[1]); return bez(sp,tp,[(sp[0]+tp[0])/2,Math.min(sp[1],tp[1])-d*.35],t);
   }
   const ll=a.geo(t), p=P(ll[0],ll[1]); if(!p) return null;
@@ -298,18 +298,19 @@ function glow(x,y,c,r,a){
   const g=fx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,rgba(c,a)); g.addColorStop(.4,rgba(c,a*.35)); g.addColorStop(1,rgba(c,0));
   fx.fillStyle=g; fx.beginPath(); fx.arc(x,y,r,0,7); fx.fill();
 }
-function drawTarget(now){
-  const tp=P(site.lon,site.lat); if(!tp) return null;
-  const [x,y]=tp, T=tok("--target");
-  glow(x,y,T,34,.32);
+// Radar at a protected location; extra locations get a smaller one, offset in phase so they don't sweep in sync.
+function drawTarget(t,i,now){
+  const tp=P(t.lon,t.lat); if(!tp) return null;
+  const [x,y]=tp, T=tok("--target"), k=i?.62:1;
+  glow(x,y,T,34*k,.32);
   if(fx.createConicGradient && !reduce){
-    const g=fx.createConicGradient((now/2400%1)*2*Math.PI,x,y);
+    const g=fx.createConicGradient(((now/2400+i*.37)%1)*2*Math.PI,x,y);
     g.addColorStop(0,rgba(T,0)); g.addColorStop(.86,rgba(T,0)); g.addColorStop(1,rgba(T,.38));
-    fx.fillStyle=g; fx.beginPath(); fx.arc(x,y,44,0,7); fx.fill();
+    fx.fillStyle=g; fx.beginPath(); fx.arc(x,y,44*k,0,7); fx.fill();
   }
   fx.lineWidth=1; fx.strokeStyle=rgba(T,.28);
-  for(const r of [16,44]){fx.beginPath(); fx.arc(x,y,r,0,7); fx.stroke()}
-  if(!reduce){const k=now/1600%1; fx.strokeStyle=rgba(T,(1-k)*.7); fx.beginPath(); fx.arc(x,y,6+k*22,0,7); fx.stroke()}
+  for(const r of [16,44]){fx.beginPath(); fx.arc(x,y,r*k,0,7); fx.stroke()}
+  if(!reduce){const q=(now/1600+i*.29)%1; fx.strokeStyle=rgba(T,(1-q)*.7); fx.beginPath(); fx.arc(x,y,(6+q*22)*k,0,7); fx.stroke()}
   fx.fillStyle="#E9FCFF"; fx.beginPath(); fx.arc(x,y,2.6,0,7); fx.fill();
   return tp;
 }
@@ -327,7 +328,7 @@ function frame(now){
     const p=P(s.lon,s.lat); if(!p) continue;
     glow(p[0],p[1],s.c,6+Math.sqrt(s.h)*6,Math.min(.5,.08+s.h*.035));
   }
-  const tp=drawTarget(now);
+  const tps=sites.map((t,i)=>drawTarget(t,i,now));
   for(let i=arcs.length-1;i>=0;i--){
     const a=arcs[i], age=(now-a.born)/a.dur;
     if(age>1.9){arcs.splice(i,1);continue}
@@ -341,23 +342,30 @@ function frame(now){
     if(sp && age<.7){const k=age/.7; fx.strokeStyle=rgba(a.c,(1-k)*.8); fx.lineWidth=1.2; fx.beginPath(); fx.arc(sp[0],sp[1],2+k*16,0,7); fx.stroke()}
     if(age<1){const h=arcPoint(a,head); if(h){glow(h[0],h[1],a.c,9,.9); fx.fillStyle="#fff"; fx.beginPath(); fx.arc(h[0],h[1],1.4,0,7); fx.fill()}}
     if(age>=1&&!a.hit){
-      a.hit=true; rings.push({c:a.c,born:now});
-      if(!reduce) for(let j=0;j<7;j++){const ang=Math.random()*7, v=.03+Math.random()*.07; sparks.push({c:a.c,born:now,vx:Math.cos(ang)*v,vy:Math.sin(ang)*v})}
+      a.hit=true; const t=a.t; rings.push({t,c:a.c,born:now});
+      if(!reduce) for(let j=0;j<7;j++){const ang=Math.random()*7, v=.03+Math.random()*.07; sparks.push({t,c:a.c,born:now,vx:Math.cos(ang)*v,vy:Math.sin(ang)*v})}
     }
   }
-  if(tp){
-    for(let i=rings.length-1;i>=0;i--){
-      const r=rings[i], k=(now-r.born)/900; if(k>1){rings.splice(i,1);continue}
-      fx.globalAlpha=(1-k)*.85; fx.strokeStyle=r.c; fx.lineWidth=1.6; fx.beginPath(); fx.arc(tp[0],tp[1],4+k*26,0,7); fx.stroke();
-    }
-    for(let i=sparks.length-1;i>=0;i--){
-      const s=sparks[i], t=now-s.born; if(t>650){sparks.splice(i,1);continue}
-      fx.globalAlpha=1-t/650; fx.fillStyle=s.c; fx.beginPath(); fx.arc(tp[0]+s.vx*t,tp[1]+s.vy*t,1.3,0,7); fx.fill();
-    }
-    fx.globalAlpha=1; fx.globalCompositeOperation="source-over";
-    fx.font='600 11px "IBM Plex Mono",monospace'; fx.fillStyle="#E9FCFF"; fx.fillText(site.name,tp[0]+12,tp[1]-10);
-  } else { rings.length=0; sparks.length=0 }
+  for(let i=rings.length-1;i>=0;i--){
+    const r=rings[i], k=(now-r.born)/900, p=P(r.t.lon,r.t.lat); if(k>1){rings.splice(i,1);continue} if(!p) continue;
+    fx.globalAlpha=(1-k)*.85; fx.strokeStyle=r.c; fx.lineWidth=1.6; fx.beginPath(); fx.arc(p[0],p[1],4+k*26,0,7); fx.stroke();
+  }
+  for(let i=sparks.length-1;i>=0;i--){
+    const s=sparks[i], t=now-s.born, p=P(s.t.lon,s.t.lat); if(t>650){sparks.splice(i,1);continue} if(!p) continue;
+    fx.globalAlpha=1-t/650; fx.fillStyle=s.c; fx.beginPath(); fx.arc(p[0]+s.vx*t,p[1]+s.vy*t,1.3,0,7); fx.fill();
+  }
   fx.globalAlpha=1; fx.globalCompositeOperation="source-over";
+  fx.font='600 11px "IBM Plex Mono",monospace'; fx.fillStyle="#E9FCFF";
+  const placed=[];                                   // nearby locations: slide labels until they no longer overlap
+  sites.forEach((t,i)=>{
+    const p=tps[i]; if(!p) return;
+    const w=fx.measureText(t.name).width;
+    for(const [dx,dy] of [[12,-10],[12,18],[-12-w,-10],[-12-w,18],[12,-26],[12,34]]){
+      const b=[p[0]+dx,p[1]+dy-10,w,13];
+      if(placed.some(q=>b[0]<q[0]+q[2]&&q[0]<b[0]+b[2]&&b[1]<q[1]+q[3]&&q[1]<b[1]+b[3])) continue;
+      placed.push(b); fx.fillText(t.name,p[0]+dx,p[1]+dy); return;
+    }
+  });
 }
 
 // ---------- panels (DOM APIs only: log text is attacker-controlled) ----------
@@ -368,7 +376,7 @@ function addFeedRow(e, fresh=true){
   const tr=el("tr",{className:fresh?"new":""}); tr.style.setProperty("--c",t.c);
   tr.append(el("td",{className:"t"},new Date(e.ts).toTimeString().slice(0,8)), el("td",{},e.ip), el("td",{},e.cc), el("td",{},t.k), el("td",{},e.port??"—"));
   const dr=el("tr",{className:"d"}); dr.style.setProperty("--c",t.c);
-  const dd=el("td",{colSpan:5,title:e.detail||""},[e.country, e.sensor, e.detail].filter(Boolean).join(" · ")); dd.className="t"; dr.append(dd);
+  const dd=el("td",{colSpan:5,title:e.detail||""},[e.country, sites.length>1?(sites[e.loc]||sites[0]).name:"", e.sensor, e.detail].filter(Boolean).join(" · ")); dd.className="t"; dr.append(dd);
   tb.prepend(dr); tb.prepend(tr);
   while(tb.rows.length>80) tb.lastElementChild.remove();
 }
@@ -413,7 +421,8 @@ async function loadState(){
   const res=await fetch("api/state",{cache:"no-store"});
   if(res.status===401){location.href="/login";return}
   const st=await res.json();
-  site=st.site; $("eyebrow").textContent=`${st.site.name} · inbound blocks and IDS alerts`;
+  sites=(st.sites&&st.sites.length?st.sites:[st.site]); site=sites[0];
+  $("eyebrow").textContent=`${sites.map(t=>t.name).join(" · ")} · inbound blocks and IDS alerts`;
   layout(); renderStats(st.stats);
   tb.replaceChildren(); st.recent.forEach(e=>addFeedRow(e,false));
   const now=Date.now(); st.recent.filter(e=>now-e.ts<2000).forEach(e=>addArc(e,now-e.ts));

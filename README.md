@@ -71,7 +71,7 @@ docker compose logs attack-map | grep "SETUP CODE"
 |---|---|
 | **Durum** | Log gönderen cihazlar, alınan/okunan satır sayıları, GeoIP durumu, *Test saldırısı gönder* düğmesi. İzinli listede olmayan bir cihaz log gönderirse burada görünür; **İzin ver** ile tek tıkla eklenir |
 | **Cihaz bağlama** | pfSense, OPNsense, FortiGate ve Suricata için adım adım ayar. Sunucu adresi ve port hazır yazılı gelir, FortiGate CLI kopyalanabilir |
-| **Konum** | Haritadaki hedef nokta ve adı |
+| **Konumlar** | Ana konum ve istediğiniz kadar ek konum (şube, veri merkezi). Her ek konuma o konumdaki firewall'ların IP'leri yazılır; o cihazların saldırıları haritada kendi konumuna iner. Hiçbir konuma yazılmamış cihazlar ana konuma gider. |
 | **Log kaynakları** | İzinli gönderici IP'leri/ağları, kaynak türlerini açma/kapama, Suricata `eve.json` yolu |
 | **GeoIP** | MaxMind Account ID + License Key, *Şimdi indir*, haftalık otomatik güncelleme. İnternet yoksa `.mmdb` dosyasını elle yükleme |
 | **Erişim** | Haritayı şifresiz gösterme (duvar ekranı için), demo verisi, saniyedeki en fazla yay sayısı |

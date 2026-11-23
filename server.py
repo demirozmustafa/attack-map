@@ -67,6 +67,7 @@ def log(*a):
 DEFAULTS = {
     "site": {"name": "EDGE-1", "lat": 41.01, "lon": 28.98},
     "allowed_senders": [],
+    "locations": [],  # extra sites: {"name","lat","lon","senders":[ip/cidr]}; unmatched senders go to "site"
     "sources": {k: True for k in SOURCE_KEYS},
     "eve_file": "",
     "max_eps": 40,
@@ -122,19 +123,46 @@ class Config:
             except ValueError:
                 pass
         self.allowed = nets
+        locs = []
+        for i, loc in enumerate(self.data.get("locations") or []):
+            ln = []
+            for s in loc.get("senders", []):
+                try:
+                    ln.append(ipaddress.ip_network(s, strict=False))
+                except ValueError:
+                    pass
+            locs.append((i + 1, ln))
+        self.loc_nets = locs
+
+    def sites(self):
+        """Main site first, then the extra locations. An event's "loc" is an index into this list."""
+        out = [dict(self.data["site"])]
+        for loc in self.data.get("locations") or []:
+            out.append({"name": loc["name"], "lat": loc["lat"], "lon": loc["lon"]})
+        return out
+
+    def location_for(self, addr):
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return 0
+        for idx, nets in self.loc_nets:
+            if any(ip in n for n in nets):
+                return idx
+        return 0
 
     @property
     def configured(self):
         return bool(self.data["admin"]["hash"])
 
     def sender_allowed(self, addr):
-        if not self.allowed:
+        if not self.allowed:  # empty allow list = accept everyone (as before locations existed)
             return True
         try:
             ip = ipaddress.ip_address(addr)
         except ValueError:
             return False
-        return any(ip in n for n in self.allowed)
+        return any(ip in n for n in self.allowed) or any(ip in n for _, nets in self.loc_nets for n in nets)
 
     def public_view(self):
         d = copy.deepcopy(self.data)
@@ -451,7 +479,8 @@ class Status:
             return {
                 "received": self.received, "parsed": self.parsed, "ignored": self.ignored,
                 "unlocated": self.unlocated, "private": self.private, "rejected": self.rejected,
-                "senders": [{"ip": k, **v} for k, v in sorted(self.senders.items(), key=lambda kv: -kv[1]["last"])],
+                "senders": [{"ip": k, **v, "loc": CONF.sites()[CONF.location_for(k)]["name"] if v["allowed"] else ""}
+                            for k, v in sorted(self.senders.items(), key=lambda kv: -kv[1]["last"])],
                 "uptime": int(time.time() - self.started),
             }
 
@@ -546,7 +575,7 @@ class Hub:
     def snapshot(self):
         with self.lock:
             recent = list(self.recent)
-        return {"site": CONF["site"], "recent": recent[-150:], "stats": self.stats()}
+        return {"site": CONF["site"], "sites": CONF.sites(), "recent": recent[-150:], "stats": self.stats()}
 
     def subscribe(self):
         q = queue.Queue(maxsize=2000)
@@ -580,7 +609,7 @@ class Hub:
 HUB = Hub()
 
 
-def handle(rec, geo_override=None):
+def handle(rec, geo_override=None, loc=0):
     if not rec or not rec.get("src"):
         return False
     try:
@@ -606,6 +635,7 @@ def handle(rec, geo_override=None):
         "proto": rec.get("proto", ""),
         "detail": str(rec.get("detail", ""))[:160],
         "sensor": rec.get("sensor", ""),
+        "loc": loc,
     })
     return True
 
@@ -623,6 +653,7 @@ def syslog_listener():
             STATUS.rejected += 1
             STATUS.sender(addr, False)
             continue
+        loc = CONF.location_for(addr)
         for line in data.decode("utf-8", "replace").splitlines():
             STATUS.received += 1
             try:
@@ -632,7 +663,7 @@ def syslog_listener():
                 log("parse error:", e)
             if rec:
                 STATUS.parsed += 1
-                handle(rec)
+                handle(rec, loc=loc)
             else:
                 STATUS.ignored += 1
             STATUS.sender(addr, True, bool(rec))
@@ -716,7 +747,7 @@ def synthetic(sensor_label):
     rec = parse_line(line)
     if rec:
         rec["sensor"] = sensor_label
-        handle(rec, geo_override=geo)
+        handle(rec, geo_override=geo, loc=random.randrange(len(CONF.sites())))
 
 
 def demo_worker():
@@ -793,6 +824,33 @@ def apply_settings(body):
                 raise ApiError(400, f"'{item}' geçerli bir IP adresi veya ağ (ör. 192.168.1.1 ya da 10.0.0.0/24) değil.") from None
             clean.append(item)
         changes.append(lambda c: c.__setitem__("allowed_senders", clean))
+    if "locations" in body:
+        lst = body["locations"]
+        if not isinstance(lst, list) or len(lst) > 30:
+            raise ApiError(400, "Konum listesi geçersiz (en fazla 30 ek konum).")
+        locs = []
+        for i, l in enumerate(lst, 1):
+            if not isinstance(l, dict):
+                raise ApiError(400, "Konum listesi geçersiz.")
+            name = v_str(l.get("name", ""), 32, f"{i}. konumun adı")
+            if not name:
+                raise ApiError(400, f"{i}. ek konumun adı boş.")
+            senders = []
+            raw = l.get("senders", [])
+            if not isinstance(raw, list) or len(raw) > 50:
+                raise ApiError(400, f"{name}: firewall IP listesi geçersiz.")
+            for item in raw:
+                item = v_str(item, 64, "Firewall IP")
+                if not item:
+                    continue
+                try:
+                    ipaddress.ip_network(item, strict=False)
+                except ValueError:
+                    raise ApiError(400, f"{name}: '{item}' geçerli bir IP adresi veya ağ değil.") from None
+                senders.append(item)
+            locs.append({"name": name, "lat": round(v_num(l.get("lat"), -90, 90, f"{name} enlemi"), 4),
+                         "lon": round(v_num(l.get("lon"), -180, 180, f"{name} boylamı"), 4), "senders": senders})
+        changes.append(lambda c: c.__setitem__("locations", locs))
     if "sources" in body:
         src = {k: bool(body["sources"].get(k, CONF["sources"][k])) for k in SOURCE_KEYS}
         changes.append(lambda c: c.__setitem__("sources", src))

@@ -75,3 +75,6 @@ nav.jump{display:flex;gap:6px;flex-wrap:wrap}
 nav.jump a{font:500 11.5px var(--mono);color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:3px;padding:4px 8px}
 nav.jump a:hover{color:var(--fg);border-color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.locrow{border:1px solid var(--line);border-radius:4px;padding:12px;background:var(--panel2)}
+.locrow .wide{grid-column:1/-1}
+.locrow .rm{justify-self:start;color:var(--bad)}
