@@ -1,0 +1,38 @@
+# Values come from .env (written by install.sh / install.ps1). Every other setting is in the web UI.
+services:
+  attack-map:
+    build: .
+    image: attack-map:latest
+    container_name: attack-map
+    restart: unless-stopped
+    ports:
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-9595}:8080/tcp"
+      - "${SYSLOG_PORT:-5514}:5514/udp"
+    environment:
+      PUBLIC_SYSLOG_PORT: "${SYSLOG_PORT:-5514}"
+      TRUST_PROXY: "${TRUST_PROXY:-0}"
+    volumes:
+      - attackmap-data:/data
+      - "${EVE_DIR:-./eve}:/eve:ro"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # HTTPS with an automatic Let's Encrypt certificate. Enabled when install.sh is given a domain
+  # (COMPOSE_PROFILES=https in .env). Ports 80 and 443 must reach this server.
+  https:
+    image: caddy:2.8.4-alpine
+    container_name: attack-map-https
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [attack-map]
+    command: caddy reverse-proxy --from "${DOMAIN:-localhost}" --to attack-map:8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  attackmap-data:
+  caddy-data:

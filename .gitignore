@@ -1,0 +1,7 @@
+.env
+.env.bak
+data/
+eve/
+__pycache__/
+*.pyc
+*.mmdb

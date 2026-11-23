@@ -1,0 +1,8 @@
+data/
+eve/
+.env
+__pycache__/
+*.pyc
+test_parsers.py
+install.*
+README.md

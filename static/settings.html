@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ayarlar · Threat Origin Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div>
+      <span class="eyebrow">Threat Origin Map</span>
+      <h1>Ayarlar</h1>
+    </div>
+    <div class="row">
+      <a class="btn" href="/">← Haritaya dön</a>
+      <button type="button" id="logout">Çıkış</button>
+    </div>
+  </div>
+  <nav class="jump" aria-label="Bölümler">
+    <a href="#status">Durum</a><a href="#devices">Cihaz bağlama</a><a href="#site">Konum</a><a href="#sources">Log kaynakları</a><a href="#geoip">GeoIP</a><a href="#access">Erişim</a>
+  </nav>
+
+  <!-- STATUS -->
+  <section class="card" id="status">
+    <header><h2>Durum</h2><div class="row" id="pills"></div></header>
+    <div class="kv">
+      <div><b id="sRecv">–</b><span>Alınan satır</span></div>
+      <div><b id="sParsed">–</b><span>Saldırı olarak okunan</span></div>
+      <div><b id="sMap">–</b><span>Bugün haritada</span></div>
+      <div><b id="sUnloc">–</b><span>Konumu bulunamayan</span></div>
+      <div><b id="sRej">–</b><span>Reddedilen paket</span></div>
+    </div>
+    <div id="statusMsg" class="msg warn" hidden></div>
+    <div>
+      <h3 class="eyebrow" style="margin-bottom:6px">Log gönderen cihazlar</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>IP</th><th>Durum</th><th>Satır</th><th>Okunan</th><th>Son</th><th></th></tr></thead>
+          <tbody id="senders"></tbody>
+        </table>
+      </div>
+      <p class="help" id="noSenders">Henüz hiçbir cihazdan log gelmedi. Aşağıdaki "Cihaz bağlama" adımlarını uygulayın.</p>
+    </div>
+    <div class="row">
+      <button type="button" id="testBtn">Test saldırısı gönder</button>
+      <span class="help">Haritaya 8 örnek olay düşer. Haritanın çalıştığını görmek içindir.</span>
+    </div>
+  </section>
+
+  <!-- DEVICES -->
+  <section class="card" id="devices">
+    <header><h2>Cihaz bağlama</h2><span class="muted small">Syslog hedefi: <code id="target"></code></span></header>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div id="tabBody"></div>
+    <p class="help">Log gelmeye başlayınca cihazın IP'si Durum bölümünde görünür. "İzinli listede değil" yazıyorsa yanındaki <b>İzin ver</b> düğmesine basın.</p>
+  </section>
+
+  <form id="form" class="stack" autocomplete="off">
+    <!-- SITE -->
+    <section class="card" id="site">
+      <header><h2>Korunan konum</h2></header>
+      <p class="help">Saldırı yaylarının indiği nokta.</p>
+      <div class="grid2">
+        <label class="field"><span>Hazır konum</span><select id="preset"></select></label>
+        <label class="field"><span>Ad</span><input type="text" id="siteName" maxlength="32"></label>
+        <label class="field"><span>Enlem</span><input type="number" id="siteLat" step="0.0001" min="-90" max="90"></label>
+        <label class="field"><span>Boylam</span><input type="number" id="siteLon" step="0.0001" min="-180" max="180"></label>
+      </div>
+    </section>
+
+    <!-- SOURCES -->
+    <section class="card" id="sources">
+      <header><h2>Log kaynakları</h2></header>
+      <label class="field"><span>İzinli gönderici IP'leri</span>
+        <textarea id="allowed" placeholder="192.168.1.1&#10;10.0.0.0/24"></textarea>
+        <p class="help">Her satıra bir IP ya da ağ. Yalnızca bu adreslerden gelen loglar kabul edilir.</p></label>
+      <div id="openWarn" class="msg warn" hidden>Liste boş: herkesten gelen syslog kabul ediliyor. UDP syslog sahte gönderilebilir; firewall'unuzun IP'sini ekleyin.</div>
+      <div class="grid2">
+        <label class="toggle"><input type="checkbox" id="srcFilterlog"><i></i><span><b>pfSense / OPNsense</b><span class="help">Engellenen, içeri gelen bağlantılar (filterlog)</span></span></label>
+        <label class="toggle"><input type="checkbox" id="srcSuricata"><i></i><span><b>Suricata</b><span class="help">IDS/IPS alarmları (EVE JSON)</span></span></label>
+        <label class="toggle"><input type="checkbox" id="srcFortigate"><i></i><span><b>FortiGate</b><span class="help">Deny trafik, IPS, DoS, WAF, AV</span></span></label>
+      </div>
+      <label class="field"><span>Suricata eve.json dosyası (isteğe bağlı)</span>
+        <input type="text" id="eveFile" placeholder="/eve/eve.json">
+        <p class="help" id="eveHelp">Suricata bu sunucudaysa syslog yerine doğrudan dosyayı okuyabilir. Kurulumda Suricata log klasörünü bağladıysanız <code>/eve/eve.json</code> yazın.</p></label>
+    </section>
+
+    <!-- GEOIP -->
+    <section class="card" id="geoip">
+      <header><h2>IP konum veritabanı</h2><span id="geoPill"></span></header>
+      <p class="help">Ücretsiz MaxMind GeoLite2-City. maxmind.com → hesap aç → <b>Manage License Keys</b> → anahtar oluştur.</p>
+      <div class="grid2">
+        <label class="field"><span>Account ID</span><input type="text" id="geoAid" inputmode="numeric"></label>
+        <label class="field"><span>License Key</span><input type="password" id="geoKey" placeholder="">
+          <p class="help" id="geoKeyHelp"></p></label>
+      </div>
+      <label class="toggle"><input type="checkbox" id="geoAuto"><i></i><span><b>Haftalık otomatik güncelle</b></span></label>
+      <div class="row">
+        <button type="button" id="geoDl">Şimdi indir</button>
+        <span class="help">Önce ayarları kaydedin.</span>
+      </div>
+      <div class="row">
+        <label class="btn" for="geoFile">.mmdb dosyası yükle</label>
+        <input type="file" id="geoFile" accept=".mmdb" hidden>
+        <span class="help">İnternet erişimi yoksa: GeoLite2-City.mmdb dosyasını elle yükleyin.</span>
+      </div>
+      <div id="geoMsg" class="msg" hidden></div>
+    </section>
+
+    <!-- ACCESS -->
+    <section class="card" id="access">
+      <header><h2>Erişim ve görünüm</h2></header>
+      <label class="toggle"><input type="checkbox" id="publicMap"><i></i><span><b>Haritayı şifresiz göster</b><span class="help">Duvar ekranı için. Haritayı açan herkes görür; Ayarlar yine şifre ister.</span></span></label>
+      <label class="toggle"><input type="checkbox" id="demo"><i></i><span><b>Örnek veri (demo)</b><span class="help">Sahte saldırılar üretir. Gerçek cihaz bağlanınca kapatın.</span></span></label>
+      <label class="field" style="max-width:280px"><span>Saniyede en fazla yay</span><input type="number" id="maxEps" min="1" max="500" step="1">
+        <p class="help">Yoğun trafikte harita bir örnek gösterir; sayaçlar her olayı sayar.</p></label>
+    </section>
+  </form>
+
+  <section class="card">
+    <header><h2>Yönetici şifresi</h2></header>
+    <form id="pwForm" class="grid2" autocomplete="off">
+      <label class="field"><span>Mevcut şifre</span><input type="password" id="pwCur" autocomplete="current-password" required></label>
+      <label class="field"><span>Yeni şifre</span><input type="password" id="pwNew" autocomplete="new-password" minlength="10" required></label>
+      <div class="row" style="align-self:end"><button type="submit">Şifreyi değiştir</button></div>
+    </form>
+    <div id="pwMsg" class="msg" hidden></div>
+  </section>
+</main>
+
+<div class="savebar" id="savebar" hidden>
+  <div class="inner">
+    <span id="saveMsg" class="small muted">Kaydedilmemiş değişiklikler var.</span>
+    <button type="button" id="discard">Vazgeç</button>
+    <button type="button" class="primary" id="save">Kaydet</button>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const H={"Content-Type":"application/json","X-Requested-With":"attackmap"};
+async function api(path,opts={}){
+  const r=await fetch(path,{...opts,headers:{...H,...(opts.headers||{})}});
+  if(r.status===401){location.href="/login?next=/settings";throw new Error("Giriş gerekli.")}
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||("Hata "+r.status));
+  return j;
+}
+function show(el,text,kind){el.textContent=text;el.className="msg "+(kind||"");el.hidden=!text}
+function el(tag,props={},text){const n=document.createElement(tag);Object.assign(n,props);if(text!=null)n.textContent=text;return n}
+const fmt=n=>Number(n).toLocaleString("tr-TR");
+const ago=s=>{if(!s)return"–";const d=Math.round(Date.now()/1000-s);return d<5?"şimdi":d<60?d+" sn önce":d<3600?Math.round(d/60)+" dk önce":Math.round(d/3600)+" sa önce"};
+
+// ---------- presets
+const PRESETS=[["Özel",null,null],["İstanbul",41.01,28.98],["Ankara",39.93,32.86],["İzmir",38.42,27.14],["Bursa",40.19,29.06],["Antalya",36.90,30.70],
+  ["Frankfurt",50.11,8.68],["Amsterdam",52.37,4.90],["Londra",51.51,-0.13],["Paris",48.86,2.35],["Ashburn (US-East)",39.04,-77.49],["Singapur",1.35,103.82]];
+$("preset").replaceChildren(...PRESETS.map((p,i)=>el("option",{value:i},p[0])));
+$("preset").onchange=()=>{const p=PRESETS[$("preset").value];if(p[1]==null)return;$("siteLat").value=p[1];$("siteLon").value=p[2];dirty(true)};
+function syncPreset(){const i=PRESETS.findIndex(p=>p[1]==+$("siteLat").value&&p[2]==+$("siteLon").value);$("preset").value=i<0?0:i}
+
+// ---------- config form
+let cfg=null;
+function fill(c){
+  cfg=c;
+  $("siteName").value=c.site.name; $("siteLat").value=c.site.lat; $("siteLon").value=c.site.lon; syncPreset();
+  $("allowed").value=c.allowed_senders.join("\n"); $("openWarn").hidden=c.allowed_senders.length>0;
+  $("srcFilterlog").checked=c.sources.filterlog; $("srcSuricata").checked=c.sources.suricata; $("srcFortigate").checked=c.sources.fortigate;
+  $("eveFile").value=c.eve_file;
+  $("geoAid").value=c.geoip.account_id; $("geoKey").value="";
+  $("geoKey").placeholder=c.geoip.license_key_set?"•••••••• (kayıtlı)":"";
+  $("geoKeyHelp").textContent=c.geoip.license_key_set?"Kayıtlı. Değiştirmek için yenisini yazın.":"";
+  $("geoAuto").checked=c.geoip.auto_update;
+  $("publicMap").checked=c.public_map; $("demo").checked=c.demo; $("maxEps").value=c.max_eps;
+  dirty(false);
+}
+function collect(){
+  const body={
+    site:{name:$("siteName").value,lat:$("siteLat").value,lon:$("siteLon").value},
+    allowed_senders:$("allowed").value.split(/[\s,]+/).filter(Boolean),
+    sources:{filterlog:$("srcFilterlog").checked,suricata:$("srcSuricata").checked,fortigate:$("srcFortigate").checked},
+    eve_file:$("eveFile").value,
+    geoip:{account_id:$("geoAid").value,auto_update:$("geoAuto").checked},
+    public_map:$("publicMap").checked, demo:$("demo").checked, max_eps:$("maxEps").value,
+  };
+  if($("geoKey").value) body.geoip.license_key=$("geoKey").value;
+  return body;
+}
+function dirty(on){$("savebar").hidden=!on;$("saveMsg").textContent="Kaydedilmemiş değişiklikler var.";$("saveMsg").className="small muted"}
+$("form").addEventListener("input",e=>{if(e.target.id!=="geoFile")dirty(true);if(e.target.id==="siteLat"||e.target.id==="siteLon")syncPreset()});
+$("form").addEventListener("change",e=>{if(e.target.type==="checkbox")dirty(true)});
+$("discard").onclick=()=>fill(cfg);
+$("save").onclick=async()=>{
+  $("save").disabled=true;
+  try{fill(await api("api/config",{method:"POST",body:JSON.stringify(collect())}));refresh()}
+  catch(x){$("saveMsg").textContent=x.message;$("saveMsg").className="small";$("saveMsg").style.color="var(--bad)"}
+  finally{$("save").disabled=false}
+};
+window.addEventListener("beforeunload",e=>{if(!$("savebar").hidden){e.preventDefault()}});
+
+// ---------- status
+async function refresh(){
+  let s; try{s=await api("api/status")}catch{return}
+  $("sRecv").textContent=fmt(s.received); $("sParsed").textContent=fmt(s.parsed);
+  $("sMap").textContent=fmt(s.map.total_today); $("sUnloc").textContent=fmt(s.unlocated); $("sRej").textContent=fmt(s.rejected);
+  const recent=s.senders.some(x=>x.allowed&&Date.now()/1000-x.last<120);
+  const pills=[];
+  pills.push(recent?["ok","Log geliyor"]:["warn","Log bekleniyor"]);
+  pills.push(s.geoip.state==="ready"?["ok","GeoIP hazır"]:s.geoip.state==="downloading"?["warn","GeoIP indiriliyor"]:["bad","GeoIP yok"]);
+  if(cfg?.demo) pills.push(["warn","Demo açık"]);
+  $("pills").replaceChildren(...pills.map(([k,t])=>el("span",{className:"pill "+k},t)));
+  const warn = s.geoip.state!=="ready" && s.unlocated>0 ? "Loglar geliyor ama konum bulunamıyor: GeoIP veritabanını kurun (aşağıda)." :
+               s.received>0 && s.parsed===0 ? "Loglar geliyor ama hiçbiri saldırı olarak okunmadı. Cihazda engellenen bağlantıların loglandığından ve doğru kaynağın açık olduğundan emin olun." : "";
+  show($("statusMsg"),warn,"warn");
+  const g=s.geoip; $("geoPill").replaceChildren(el("span",{className:"pill "+(g.state==="ready"?"ok":g.state==="downloading"?"warn":"bad")},
+    g.state==="ready"?g.message:g.state==="downloading"?"İndiriliyor…":"Yok"));
+  if(g.last_error) show($("geoMsg"),g.last_error,"bad");
+  else if(g.state==="error") show($("geoMsg"),g.message,"bad");
+  $("target").textContent=`${location.hostname}:${s.syslog_port} (UDP)`; port=s.syslog_port; renderTab();
+  $("eveHelp").hidden=false;
+  if(s.eve_root) $("eveFile").placeholder=s.eve_root.replace(/\/$/,"")+"/eve.json";
+  const tb=$("senders"); tb.replaceChildren();
+  $("noSenders").hidden=s.senders.length>0;
+  for(const x of s.senders){
+    const tr=el("tr");
+    const st=el("td"); st.append(el("span",{className:"pill "+(x.allowed?"ok":"bad")},x.allowed?"Kabul":"İzinli listede değil"));
+    const act=el("td");
+    if(!x.allowed){const b=el("button",{type:"button"},"İzin ver");b.onclick=()=>allow(x.ip,b);act.append(b)}
+    tr.append(el("td",{},x.ip),st,el("td",{},fmt(x.count)),el("td",{},fmt(x.parsed)),el("td",{},ago(x.last)),act);
+    tb.append(tr);
+  }
+}
+async function allow(ip,btn){
+  btn.disabled=true;
+  try{fill(await api("api/config",{method:"POST",body:JSON.stringify({allowed_senders:[...cfg.allowed_senders,ip]})}));refresh()}
+  catch(x){btn.disabled=false;alert(x.message)}
+}
+$("testBtn").onclick=async()=>{$("testBtn").disabled=true;try{await api("api/test-event",{method:"POST"});setTimeout(refresh,300)}finally{setTimeout(()=>$("testBtn").disabled=false,1500)}};
+
+// ---------- geoip actions
+$("geoDl").onclick=async()=>{
+  if(!$("savebar").hidden){show($("geoMsg"),"Önce Kaydet'e basın.","warn");return}
+  try{await api("api/geoip/download",{method:"POST"});show($("geoMsg"),"İndirme başladı. Yaklaşık 70 MB, bir dakika sürebilir.","ok");$("geoMsg").dataset.dl="1";poll()}
+  catch(x){show($("geoMsg"),x.message,"bad")}
+};
+async function poll(){for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,2000));const s=await api("api/status");refresh();
+  if(s.geoip.state!=="downloading"){if(!s.geoip.last_error&&s.geoip.state==="ready")show($("geoMsg"),"Veritabanı kuruldu: "+s.geoip.message,"ok");return}}}
+$("geoFile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  show($("geoMsg"),`${f.name} yükleniyor…`,"");
+  try{const j=await api("api/geoip/upload",{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:f});show($("geoMsg"),"Veritabanı kuruldu: "+j.message,"ok");refresh()}
+  catch(x){show($("geoMsg"),x.message,"bad")}
+  e.target.value="";
+};
+
+// ---------- password + logout
+$("pwForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  try{await api("api/password",{method:"POST",body:JSON.stringify({current:$("pwCur").value,new:$("pwNew").value})});
+    show($("pwMsg"),"Şifre değiştirildi. Diğer cihazlardaki oturumlar kapatıldı.","ok");$("pwCur").value=$("pwNew").value=""}
+  catch(x){show($("pwMsg"),x.message,"bad")}
+});
+$("logout").onclick=async()=>{await api("api/logout",{method:"POST"}).catch(()=>{});location.href="/login"};
+
+// ---------- device guides
+let port=5514, tab="pfsense";
+const GUIDES={
+  pfsense:{label:"pfSense",render:(h,p)=>[
+    ["ol",[`<b>Status → System Logs → Settings</b> sayfasını açın.`,
+      `<b>Enable Remote Logging</b> kutusunu işaretleyin.`,
+      `<b>Remote log servers</b> alanına <code>${h}:${p}</code> yazın.`,
+      `<b>Remote Syslog Contents</b> bölümünde <b>Firewall Events</b> işaretli olsun. Suricata paketi kuruluysa onu da seçin.`,
+      `<b>Firewall → Rules → WAN</b>: engelleyen kurallarda <b>Log packets</b> açık olsun ya da <b>Status → System Logs → Settings</b> altında <b>Log packets matched from the default block rules</b> işaretli olsun.`,
+      `Kaydedin. Birkaç saniye içinde cihaz Durum bölümünde görünür.`]]]},
+  opnsense:{label:"OPNsense",render:(h,p)=>[
+    ["ol",[`<b>System → Settings → Logging / targets</b> → <b>+</b>`,
+      `Transport: <b>UDP(4)</b>, Applications: <b>filter (filterlog)</b> (Suricata kullanıyorsanız <b>suricata</b> da)`,
+      `Hostname: <code>${h}</code>, Port: <code>${p}</code>`,
+      `Kaydedip <b>Apply</b> deyin. WAN engelleme kurallarında <b>Log</b> açık olmalı (varsayılan block kuralı için <b>Firewall → Settings → Advanced → Log default block</b>).`]]]},
+  fortigate:{label:"FortiGate",render:(h,p)=>[
+    ["p","CLI'ya yapıştırın:"],
+    ["pre",`config log syslogd setting\n    set status enable\n    set server "${h}"\n    set port ${p}\n    set mode udp\n    set format default\nend\nconfig log syslogd filter\n    set forward-traffic enable\n    set local-traffic enable\n    set anomaly enable\nend`],
+    ["p","WAN'dan gelen deny trafiğini görmek için ilgili policy'lerde (ve implicit deny'da) <b>Log Violation Traffic</b> açık olmalı. IPS/WAF olayları otomatik gelir."]]},
+  suricata:{label:"Suricata",render:(h,p)=>[
+    ["p","<b>pfSense / OPNsense paketi:</b> Interface ayarlarında <b>EVE JSON Log</b> açın, çıktı türünü <b>SYSLOG</b> seçin ve firewall'un remote syslog'unu yukarıdaki gibi bu sunucuya yönlendirin."],
+    ["p","<b>Bağımsız Suricata (Linux):</b> rsyslog ile gönderin:"],
+    ["pre",`# /etc/rsyslog.d/60-attackmap.conf\nmodule(load="imfile")\ninput(type="imfile" File="/var/log/suricata/eve.json" Tag="suricata:")\nif $programname == 'suricata' then @${h}:${p}`],
+    ["p","Suricata bu sunucudaysa daha kolayı: kurulumda Suricata log klasörünü bağlayıp <b>Log kaynakları → eve.json dosyası</b> alanına <code>/eve/eve.json</code> yazın."]]},
+};
+function renderTab(){
+  const h=location.hostname;
+  $("tabs").replaceChildren(...Object.entries(GUIDES).map(([k,g])=>{const b=el("button",{type:"button",role:"tab"},g.label);b.setAttribute("aria-selected",k===tab);b.onclick=()=>{tab=k;renderTab()};return b}));
+  const body=$("tabBody"); body.replaceChildren();
+  for(const [kind,content] of GUIDES[tab].render(h,port)){
+    if(kind==="ol"){const ol=el("ol",{className:"steps"});content.forEach(t=>{const li=el("li");li.innerHTML=t;ol.append(li)});body.append(ol)}
+    else if(kind==="pre"){const wrap=el("div",{className:"field"});const pre=el("pre",{},content);const b=el("button",{type:"button"},"Kopyala");
+      b.onclick=async()=>{try{await navigator.clipboard.writeText(content);b.textContent="Kopyalandı"}catch{const r=document.createRange();r.selectNodeContents(pre);getSelection().removeAllRanges();getSelection().addRange(r)}setTimeout(()=>b.textContent="Kopyala",1500)};
+      const row=el("div",{className:"row"});row.append(b);wrap.append(pre,row);body.append(wrap)}
+    else{const p=el("p",{className:"help"});p.innerHTML=content;body.append(p)}
+  }
+}
+
+(async()=>{fill(await api("api/config"));await refresh();setInterval(refresh,3000)})();
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Giriş · Threat Origin Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<main class="wrap narrow" style="margin-top:10vh">
+  <form class="card" id="f">
+    <div>
+      <span class="eyebrow">Threat Origin Map</span>
+      <h1>Giriş</h1>
+    </div>
+    <label class="field"><span>Yönetici şifresi</span><input type="password" id="pw" autocomplete="current-password" required autofocus></label>
+    <div id="err" class="msg bad" hidden></div>
+    <div class="row"><button class="primary" type="submit" id="go">Giriş yap</button></div>
+  </form>
+</main>
+<script>
+document.getElementById("f").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const err=document.getElementById("err"), go=document.getElementById("go");
+  err.hidden=true; go.disabled=true;
+  try{
+    const r=await fetch("api/login",{method:"POST",headers:{"Content-Type":"application/json","X-Requested-With":"attackmap"},body:JSON.stringify({password:document.getElementById("pw").value})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||"Giriş yapılamadı.");
+    const next=new URLSearchParams(location.search).get("next");
+    location.href = next==="/settings" ? "/settings" : "/";
+  }catch(x){err.textContent=x.message;err.hidden=false;go.disabled=false}
+});
+</script>
+</body>
+</html>

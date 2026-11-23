@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kurulum · Threat Origin Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<main class="wrap" style="max-width:640px">
+  <div>
+    <span class="eyebrow">Threat Origin Map · ilk kurulum</span>
+    <h1>Haritayı kuralım</h1>
+    <p class="muted">Bunlar sonradan Ayarlar sayfasından değiştirilebilir.</p>
+  </div>
+
+  <form id="f" class="stack">
+    <section class="card">
+      <h2>1 · Güvenlik</h2>
+      <label class="field"><span>Kurulum kodu</span><input type="text" id="code" placeholder="ABCD-1234-EF56" autocomplete="off" required>
+        <p class="help">Kurulum betiğinin sonunda yazar. Kaybettiyseniz sunucuda <code>docker compose logs attack-map | grep "SETUP CODE"</code></p></label>
+      <div class="grid2">
+        <label class="field"><span>Yönetici şifresi</span><input type="password" id="pw" autocomplete="new-password" minlength="10" required></label>
+        <label class="field"><span>Şifre tekrar</span><input type="password" id="pw2" autocomplete="new-password" minlength="10" required></label>
+      </div>
+      <p class="help">En az 10 karakter.</p>
+    </section>
+
+    <section class="card">
+      <h2>2 · Korunan konum</h2>
+      <p class="help">Saldırı yayları haritada bu noktaya iner.</p>
+      <div class="grid2">
+        <label class="field"><span>Hazır konum</span><select id="preset"></select></label>
+        <label class="field"><span>Ad</span><input type="text" id="name" maxlength="32" value="TR-IST-1"></label>
+        <label class="field"><span>Enlem</span><input type="number" id="lat" step="0.0001" min="-90" max="90" value="41.01"></label>
+        <label class="field"><span>Boylam</span><input type="number" id="lon" step="0.0001" min="-180" max="180" value="28.98"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3 · IP konum veritabanı</h2>
+      <p class="help">Saldırganların ülkesini bulmak için ücretsiz MaxMind GeoLite2 gerekir. maxmind.com'da ücretsiz hesap açıp <b>Manage License Keys</b> bölümünden bir anahtar oluşturun. Şimdi boş bırakıp sonra da girebilirsiniz.</p>
+      <div class="grid2">
+        <label class="field"><span>Account ID</span><input type="text" id="aid" inputmode="numeric" autocomplete="off"></label>
+        <label class="field"><span>License Key</span><input type="password" id="key" autocomplete="off"></label>
+      </div>
+      <label class="toggle"><input type="checkbox" id="demo"><i></i><span><b>Örnek verilerle başla</b><span class="help">Cihaz bağlanana kadar harita sahte saldırılar gösterir. Ayarlardan kapatılır.</span></span></label>
+    </section>
+
+    <div id="err" class="msg bad" hidden></div>
+    <div class="row"><button class="primary" type="submit" id="go">Kurulumu tamamla</button></div>
+  </form>
+</main>
+<script>
+const PRESETS=[["Özel",null,null],["İstanbul",41.01,28.98],["Ankara",39.93,32.86],["İzmir",38.42,27.14],["Bursa",40.19,29.06],["Antalya",36.90,30.70],
+  ["Frankfurt",50.11,8.68],["Amsterdam",52.37,4.90],["Londra",51.51,-0.13],["Paris",48.86,2.35],["Ashburn (US-East)",39.04,-77.49],["Singapur",1.35,103.82]];
+const $=id=>document.getElementById(id);
+$("preset").replaceChildren(...PRESETS.map((p,i)=>{const o=document.createElement("option");o.value=i;o.textContent=p[0];return o}));
+$("preset").value=1;
+$("preset").onchange=()=>{const p=PRESETS[$("preset").value];if(p[1]==null)return;$("lat").value=p[1];$("lon").value=p[2]};
+$("f").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const err=$("err"),go=$("go"); err.hidden=true;
+  if($("pw").value!==$("pw2").value){err.textContent="Şifreler aynı değil.";err.hidden=false;return}
+  go.disabled=true;
+  const body={code:$("code").value,password:$("pw").value,demo:$("demo").checked,
+    site:{name:$("name").value,lat:$("lat").value,lon:$("lon").value},
+    geoip:{account_id:$("aid").value,license_key:$("key").value}};
+  try{
+    const r=await fetch("api/setup",{method:"POST",headers:{"Content-Type":"application/json","X-Requested-With":"attackmap"},body:JSON.stringify(body)});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||"Kurulum tamamlanamadı.");
+    location.href="/settings#devices";
+  }catch(x){err.textContent=x.message;err.hidden=false;go.disabled=false}
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Threat Origin Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen SOC console — KPI strip, map stage left, three intel panels right; one column on phones. Single deliberate dark look. */
+:root{
+  --bg:#0B1220; --panel:#111A2C; --line:#1F2A40; --land:#2B3A57; --fg:#DCE4F2; --muted:#7D8AA6;
+  --target:#59D8E6; --brute:#F2A541; --web:#F2545B; --scan:#8FA7FF; --ddos:#C77DFF; --c2:#5FD39A; --ok:#5FD39A;
+  --display:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:14px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:auto 1fr;gap:12px;height:100%;min-height:620px}
+header{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}
+.brand{display:flex;flex-direction:column;gap:2px;margin-right:auto;min-width:0}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(20px,2.4vw,28px);margin:0;letter-spacing:.01em;display:flex;flex-wrap:wrap;align-items:center;gap:12px;text-wrap:balance}
+.live{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.14em;
+  padding:3px 9px 3px 8px;border:1px solid var(--line);color:var(--muted);border-radius:3px}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.live[data-s="live"]{color:var(--web);border-color:color-mix(in srgb,var(--web) 60%,transparent);background:color-mix(in srgb,var(--web) 12%,transparent)}
+.live[data-s="live"] i{background:var(--web);animation:blink 1.2s infinite}
+.live[data-s="down"]{color:var(--brute);border-color:color-mix(in srgb,var(--brute) 60%,transparent)}
+.live[data-s="down"] i{background:var(--brute)}
+@keyframes blink{50%{opacity:.25}}
+.kpis{display:flex;flex-wrap:wrap;gap:8px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 12px;min-width:104px}
+.kpi b{display:block;font-family:var(--display);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi span{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+button,.btn{font:500 12px var(--mono);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 12px;cursor:pointer;text-decoration:none}
+button:hover,.btn:hover{border-color:var(--muted)}
+button:focus-visible,.btn:focus-visible{outline:2px solid var(--target);outline-offset:2px}
+.ctrls{display:flex;gap:8px}
+.banner{position:absolute;left:50%;top:12px;transform:translateX(-50%);max-width:calc(100% - 24px);font:12px var(--body);padding:8px 12px;border-radius:4px;
+  border:1px solid color-mix(in srgb,var(--brute) 55%,transparent);background:color-mix(in srgb,var(--panel) 90%,var(--brute));color:var(--fg)}
+.banner a{color:var(--target)}
+.stage{position:relative;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-height:360px;min-width:0;
+  background:radial-gradient(ellipse at 50% 45%,#13213A 0%,var(--panel) 55%,#0A111E 100%)}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.35) 100%)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage[data-view="globe"] #fx{cursor:grab;touch-action:none}
+.stage[data-view="globe"] #fx:active{cursor:grabbing}
+.legend,.sim,.banner{z-index:2}
+.kpi b.bump{animation:bump .7s ease-out}
+@keyframes bump{from{color:var(--target);text-shadow:0 0 14px color-mix(in srgb,var(--target) 70%,transparent)}}
+.legend{position:absolute;left:12px;bottom:10px;display:flex;flex-wrap:wrap;gap:6px 14px;font:11px var(--mono);color:var(--muted);
+  background:color-mix(in srgb,var(--panel) 80%,transparent);padding:6px 10px;border-radius:4px;max-width:calc(100% - 24px)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:2px;border-radius:1px}
+.sim{position:absolute;right:12px;top:10px;font:10.5px var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase;text-align:right}
+aside{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;min-width:0}
+.panel h2{font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.panel h2 small{font:400 10.5px var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:none}
+.rows{display:grid;gap:7px}
+.row{display:grid;grid-template-columns:26px minmax(0,1fr) 64px;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+.row .cc{font:500 11px var(--mono);color:var(--muted)}
+.row .nm{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;padding-bottom:5px}
+.row .nm::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:var(--w,0%);background:var(--brute);border-radius:1px;transition:width .5s}
+.row .ct{font:500 12px var(--mono);text-align:right}
+.stack{display:flex;height:8px;border-radius:2px;overflow:hidden;gap:2px;margin-bottom:10px;background:var(--line)}
+.stack div{transition:flex-grow .5s}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12.5px}
+.types div{display:flex;align-items:center;gap:7px;min-width:0}
+.types i{width:8px;height:8px;border-radius:2px;flex:none}
+.types em{font:normal 500 11.5px var(--mono);color:var(--muted);margin-left:auto}
+.feed{flex:1;display:flex;flex-direction:column;min-height:200px}
+.feedbox{flex:1;overflow:auto;min-height:0}
+table{width:100%;border-collapse:collapse;font:11.5px var(--mono);font-variant-numeric:tabular-nums}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:0 6px 6px 0;position:sticky;top:0;background:var(--panel)}
+td{padding:5px 6px 5px 0;border-top:1px solid var(--line);white-space:nowrap}
+td.t{border-left:2px solid var(--c,var(--muted));padding-left:6px}
+tr.d td{border-top:0;padding-top:0;color:var(--muted);font-size:10.5px;max-width:0;overflow:hidden;text-overflow:ellipsis}
+tr.new td{animation:flash 1s ease-out}
+@keyframes flash{from{background:color-mix(in srgb,var(--c,#fff) 18%,transparent)}to{background:transparent}}
+.note{font-size:11.5px;color:var(--muted);margin:8px 0 0;line-height:1.5}
+@media (max-width:900px){
+  html,body{height:auto}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;height:auto}
+  .stage{aspect-ratio:16/10;min-height:0;max-width:100%}
+  .feedbox{max-height:340px}
+}
+@media (prefers-reduced-motion:reduce){.live i{animation:none!important}tr.new td{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="eyebrow" id="eyebrow">Perimeter sensor · inbound blocks and IDS alerts</span>
+      <h1>Where attackers come from <span class="live" id="live" data-s="connecting"><i></i><span id="liveTxt">CONNECTING</span></span></h1>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b id="kRate">–</b><span>Attacks / min</span></div>
+      <div class="kpi"><b id="kTotal">–</b><span>Today</span></div>
+      <div class="kpi"><b id="kIps">–</b><span>Unique IPs</span></div>
+      <div class="kpi"><b id="kCountries">–</b><span>Countries</span></div>
+    </div>
+    <div class="ctrls">
+      <button id="view" type="button" aria-pressed="false">Globe</button>
+      <button id="pause" type="button">Pause</button>
+      <a id="settingsLink" class="btn" href="/settings" hidden>Settings</a>
+    </div>
+  </header>
+
+  <section class="stage" aria-label="World map of attack sources">
+    <canvas id="map"></canvas>
+    <canvas id="fx"></canvas>
+    <div class="sim" id="sampleNote"></div>
+    <div class="banner" id="banner" hidden></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <aside>
+    <div class="panel">
+      <h2>Top source countries <small>last 15 min</small></h2>
+      <div class="rows" id="top"><p class="note">Waiting for the first events…</p></div>
+    </div>
+    <div class="panel">
+      <h2>Attack types <small id="typeTotal">last 15 min</small></h2>
+      <div class="stack" id="stack"></div>
+      <div class="types" id="types"></div>
+    </div>
+    <div class="panel feed">
+      <h2>Event feed <small>newest first</small></h2>
+      <div class="feedbox">
+        <table>
+          <thead><tr><th>Time</th><th>Source</th><th>CC</th><th>Type</th><th>Port</th></tr></thead>
+          <tbody id="feed"></tbody>
+        </table>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script>
+(async function(){
+const css = getComputedStyle(document.documentElement);
+const tok = n => css.getPropertyValue(n).trim();
+const TYPES = [
+  {k:"brute", name:"Brute force", c:tok("--brute")},
+  {k:"web",   name:"Web exploit", c:tok("--web")},
+  {k:"scan",  name:"Port scan", c:tok("--scan")},
+  {k:"ddos",  name:"DoS / flood", c:tok("--ddos")},
+  {k:"c2",    name:"Malware / C2", c:tok("--c2")},
+];
+const TYPE = Object.fromEntries(TYPES.map(t=>[t.k,t]));
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const fmt = d3.format(",");
+const $ = id => document.getElementById(id);
+
+const mapC=$("map"), fxC=$("fx"), mctx=mapC.getContext("2d"), fx=fxC.getContext("2d");
+const LAND = await (await fetch("land-110m.json")).json();
+const land = topojson.feature(LAND, LAND.objects.land);
+const graticule = d3.geoGraticule10();
+const stage = mapC.parentElement;
+let proj, W=0, H=0, dpr=1, R=0, paused=false;
+let site = {name:"", lat:41.01, lon:28.98};
+const store = {get:k=>{try{return localStorage.getItem(k)}catch(e){return null}}, set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+let view = store.get("am-view")==="globe" ? "globe" : "flat";
+const rgba = (hex,a) => {const n=parseInt(hex.replace("#",""),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`};
+const RAD = Math.PI/180;
+const vec = (lon,lat) => [Math.cos(lat*RAD)*Math.cos(lon*RAD), Math.cos(lat*RAD)*Math.sin(lon*RAD), Math.sin(lat*RAD)];
+
+// Land as dots on a lat/lon grid for the globe, sampled from a small equirectangular raster (thinned towards the poles).
+const DOTS = (()=>{
+  const step=1.2, w=Math.round(360/step), h=Math.round(180/step);
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const g=c.getContext("2d",{willReadFrequently:true});
+  g.beginPath(); d3.geoPath(d3.geoEquirectangular().fitSize([w,h],{type:"Sphere"}),g)(land); g.fill();
+  const px=g.getImageData(0,0,w,h).data, out=[];
+  for(let y=0;y<h;y++){
+    const lat=90-(y+.5)*step, skip=Math.min(w,Math.max(1,Math.round(1/Math.cos(lat*RAD))));
+    for(let x=0;x<w;x+=skip) if(px[(y*w+x)*4+3]>127){const lon=-180+(x+.5)*step; out.push({ll:[lon,lat], v:vec(lon,lat)})}
+  }
+  return out;
+})();
+
+// ---------- views ----------
+const spin={drag:0, tilt:0, t0:performance.now()};
+function globeRotation(now){
+  const sway = reduce ? 0 : Math.sin((now-spin.t0)/48000*2*Math.PI)*55;  // slow swing around the protected site
+  return [-site.lon + sway + spin.drag, Math.max(-60,Math.min(60,-site.lat*.55 + spin.tilt))];
+}
+function centerVec(){const r=proj.rotate(); return vec(-r[0],-r[1])}
+// Screen point, or null when it is on the far side of the globe.
+function P(lon,lat){
+  const p=proj([lon,lat]); if(!p||view==="flat") return p;
+  const c=centerVec(), v=vec(lon,lat); return v[0]*c[0]+v[1]*c[1]+v[2]*c[2]>0 ? p : null;
+}
+function layout(){
+  const r=stage.getBoundingClientRect();
+  dpr=Math.min(devicePixelRatio||1,2); W=Math.max(1,r.width|0); H=Math.max(1,r.height|0);
+  for(const c of [mapC,fxC]){c.width=W*dpr;c.height=H*dpr}
+  stage.dataset.view=view;
+  if(view==="flat"){
+    proj=d3.geoNaturalEarth1().fitExtent([[10,14],[W-10,H-34]],{type:"Sphere"});
+    drawFlatBase();
+  } else {
+    R=Math.max(60,Math.min(W*.44,(H-50)*.47));
+    proj=d3.geoOrthographic().scale(R).translate([W/2,(H-30)/2+8]).clipAngle(90).precision(.6).rotate(globeRotation(performance.now()));
+  }
+}
+function drawFlatBase(){
+  const off=document.createElement("canvas"); off.width=W; off.height=H;
+  const o=off.getContext("2d",{willReadFrequently:true}); o.beginPath(); d3.geoPath(proj,o)(land); o.fill();
+  const px=o.getImageData(0,0,W,H).data;
+  const m=mctx; m.setTransform(dpr,0,0,dpr,0,0); m.clearRect(0,0,W,H);
+  m.strokeStyle=rgba(tok("--line"),.8); m.lineWidth=.6; m.beginPath(); d3.geoPath(proj,m)(graticule); m.stroke();
+  m.strokeStyle=rgba(tok("--target"),.18); m.lineWidth=1; m.beginPath(); d3.geoPath(proj,m)({type:"Sphere"}); m.stroke();
+  const [tx,ty]=proj([site.lon,site.lat]), reach=Math.max(W,H)*.45, step=W<500?4:5;
+  const landC=tok("--land"), lit=tok("--target");
+  for(let y=step/2;y<H;y+=step)for(let x=step/2;x<W;x+=step){
+    if(px[((y|0)*W+(x|0))*4+3]===0) continue;
+    const near=Math.max(0,1-Math.hypot(x-tx,y-ty)/reach);           // land brightens towards the protected site
+    m.fillStyle=near>.55?lit:landC; m.globalAlpha=near>.55?.18+near*.35:.55+near*.45;
+    m.beginPath(); m.arc(x,y,step*.28,0,7); m.fill();
+  }
+  m.globalAlpha=1;
+}
+function drawGlobeBase(now){
+  proj.rotate(globeRotation(now));
+  const [cx,cy]=proj.translate(), m=mctx, T=tok("--target");
+  m.setTransform(dpr,0,0,dpr,0,0); m.clearRect(0,0,W,H);
+  let g=m.createRadialGradient(cx,cy,R*.92,cx,cy,R*1.28);                  // atmosphere
+  g.addColorStop(0,rgba(T,.30)); g.addColorStop(.35,rgba(T,.10)); g.addColorStop(1,rgba(T,0));
+  m.fillStyle=g; m.beginPath(); m.arc(cx,cy,R*1.28,0,7); m.fill();
+  g=m.createRadialGradient(cx-R*.35,cy-R*.4,R*.05,cx,cy,R*1.02);           // lit ocean
+  g.addColorStop(0,"#13213A"); g.addColorStop(.7,"#0B1424"); g.addColorStop(1,"#060B16");
+  m.fillStyle=g; m.beginPath(); m.arc(cx,cy,R,0,7); m.fill();
+  m.strokeStyle=rgba(tok("--line"),.55); m.lineWidth=.5; m.beginPath(); d3.geoPath(proj,m)(graticule); m.stroke();
+  const c=centerVec(), buckets=[[],[],[],[]], s=Math.max(1.3,R/150);
+  for(const d of DOTS){
+    const k=d.v[0]*c[0]+d.v[1]*c[1]+d.v[2]*c[2]; if(k<=.03) continue;
+    const p=proj(d.ll); if(p) buckets[Math.min(3,(k*4.2)|0)].push(p);
+  }
+  m.fillStyle="#5A7BB0";
+  buckets.forEach((b,i)=>{m.globalAlpha=.28+i*.22; m.beginPath(); for(const p of b) m.rect(p[0]-s/2,p[1]-s/2,s,s); m.fill()});
+  m.globalAlpha=1; m.strokeStyle=rgba(T,.45); m.lineWidth=1.2; m.beginPath(); m.arc(cx,cy,R,0,7); m.stroke();
+}
+function setView(v){
+  view=v; store.set("am-view",v);
+  $("view").textContent = v==="globe" ? "Flat map" : "Globe";
+  $("view").setAttribute("aria-pressed", v==="globe");
+  arcs.length=0; layout();
+}
+$("view").onclick=()=>setView(view==="globe"?"flat":"globe");
+let drag=null;
+fxC.addEventListener("pointerdown",e=>{if(view!=="globe")return; drag={x:e.clientX,y:e.clientY}; fxC.setPointerCapture(e.pointerId)});
+fxC.addEventListener("pointermove",e=>{
+  if(!drag)return;
+  spin.drag+=(e.clientX-drag.x)*.35; spin.tilt-=(e.clientY-drag.y)*.35; spin.tilt=Math.max(-50,Math.min(50,spin.tilt));
+  drag={x:e.clientX,y:e.clientY};
+});
+fxC.addEventListener("pointerup",()=>{drag=null}); fxC.addEventListener("pointercancel",()=>{drag=null});
+
+// ---------- animation ----------
+const arcs=[], sparks=[], rings=[], spots=new Map();
+function bez(p0,p1,c,t){const u=1-t;return[u*u*p0[0]+2*u*t*c[0]+t*t*p1[0],u*u*p0[1]+2*u*t*c[1]+t*t*p1[1]]}
+function addArc(e, ageMs=0){
+  if(arcs.length>260) return;
+  const c=(TYPE[e.type]||TYPE.scan).c, d=d3.geoDistance([e.lon,e.lat],[site.lon,site.lat]);
+  arcs.push({e, c, born:performance.now()-ageMs, dur:1200+Math.random()*900,
+    geo:d3.geoInterpolate([e.lon,e.lat],[site.lon,site.lat]), alt:.06+.32*d/Math.PI});
+  const k=e.cc+Math.round(e.lat/2)+","+Math.round(e.lon/2); let s=spots.get(k);
+  if(!s){ if(spots.size>300) return; s={lat:e.lat,lon:e.lon,h:0}; spots.set(k,s) }
+  s.h=Math.min(s.h+1,40); s.c=c;
+}
+// Point t∈[0,1] along an arc: a raised Bézier on the flat map, a lifted great circle on the globe.
+function arcPoint(a,t){
+  if(view==="flat"){
+    const sp=proj([a.e.lon,a.e.lat]), tp=proj([site.lon,site.lat]); if(!sp||!tp) return null;
+    const d=Math.hypot(tp[0]-sp[0],tp[1]-sp[1]); return bez(sp,tp,[(sp[0]+tp[0])/2,Math.min(sp[1],tp[1])-d*.35],t);
+  }
+  const ll=a.geo(t), p=P(ll[0],ll[1]); if(!p) return null;
+  const [cx,cy]=proj.translate(), lift=1+a.alt*Math.sin(Math.PI*t);
+  return [cx+(p[0]-cx)*lift, cy+(p[1]-cy)*lift];
+}
+function trace(a,t0,t1,n){
+  let open=false; fx.beginPath();
+  for(let k=0;k<=n;k++){const p=arcPoint(a,t0+(t1-t0)*k/n); if(!p){open=false;continue} open?fx.lineTo(p[0],p[1]):fx.moveTo(p[0],p[1]); open=true}
+  fx.stroke();
+}
+function glow(x,y,c,r,a){
+  const g=fx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,rgba(c,a)); g.addColorStop(.4,rgba(c,a*.35)); g.addColorStop(1,rgba(c,0));
+  fx.fillStyle=g; fx.beginPath(); fx.arc(x,y,r,0,7); fx.fill();
+}
+function drawTarget(now){
+  const tp=P(site.lon,site.lat); if(!tp) return null;
+  const [x,y]=tp, T=tok("--target");
+  glow(x,y,T,34,.32);
+  if(fx.createConicGradient && !reduce){
+    const g=fx.createConicGradient((now/2400%1)*2*Math.PI,x,y);
+    g.addColorStop(0,rgba(T,0)); g.addColorStop(.86,rgba(T,0)); g.addColorStop(1,rgba(T,.38));
+    fx.fillStyle=g; fx.beginPath(); fx.arc(x,y,44,0,7); fx.fill();
+  }
+  fx.lineWidth=1; fx.strokeStyle=rgba(T,.28);
+  for(const r of [16,44]){fx.beginPath(); fx.arc(x,y,r,0,7); fx.stroke()}
+  if(!reduce){const k=now/1600%1; fx.strokeStyle=rgba(T,(1-k)*.7); fx.beginPath(); fx.arc(x,y,6+k*22,0,7); fx.stroke()}
+  fx.fillStyle="#E9FCFF"; fx.beginPath(); fx.arc(x,y,2.6,0,7); fx.fill();
+  return tp;
+}
+let last=performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  if(!proj) return;
+  const dt=Math.min(100,now-last); last=now;
+  if(view==="globe") drawGlobeBase(now);
+  fx.setTransform(dpr,0,0,dpr,0,0); fx.clearRect(0,0,W,H);
+  fx.globalCompositeOperation="lighter"; fx.lineCap="round";
+  // heat where attacks come from (fades over ~10 s)
+  for(const [k,s] of spots){
+    s.h*=Math.exp(-dt/9000); if(s.h<.04){spots.delete(k);continue}
+    const p=P(s.lon,s.lat); if(!p) continue;
+    glow(p[0],p[1],s.c,6+Math.sqrt(s.h)*6,Math.min(.5,.08+s.h*.035));
+  }
+  const tp=drawTarget(now);
+  for(let i=arcs.length-1;i>=0;i--){
+    const a=arcs[i], age=(now-a.born)/a.dur;
+    if(age>1.9){arcs.splice(i,1);continue}
+    const head=Math.min(age,1), fade=age>1?1-(age-1)/.9:1, tail=reduce?0:Math.max(0,head-.42);
+    fx.strokeStyle=a.c;
+    fx.globalAlpha=.13*fade; fx.lineWidth=1; trace(a,0,head,30);           // faint full path
+    const n=9;                                                              // comet: brighter and thicker towards the head
+    for(let k=0;k<n;k++){const q=(k+1)/n; fx.globalAlpha=fade*q*q; fx.lineWidth=.5+q*2; trace(a,tail+(head-tail)*k/n,tail+(head-tail)*(k+1)/n,3)}
+    fx.globalAlpha=1;
+    const sp=arcPoint(a,0);
+    if(sp && age<.7){const k=age/.7; fx.strokeStyle=rgba(a.c,(1-k)*.8); fx.lineWidth=1.2; fx.beginPath(); fx.arc(sp[0],sp[1],2+k*16,0,7); fx.stroke()}
+    if(age<1){const h=arcPoint(a,head); if(h){glow(h[0],h[1],a.c,9,.9); fx.fillStyle="#fff"; fx.beginPath(); fx.arc(h[0],h[1],1.4,0,7); fx.fill()}}
+    if(age>=1&&!a.hit){
+      a.hit=true; rings.push({c:a.c,born:now});
+      if(!reduce) for(let j=0;j<7;j++){const ang=Math.random()*7, v=.03+Math.random()*.07; sparks.push({c:a.c,born:now,vx:Math.cos(ang)*v,vy:Math.sin(ang)*v})}
+    }
+  }
+  if(tp){
+    for(let i=rings.length-1;i>=0;i--){
+      const r=rings[i], k=(now-r.born)/900; if(k>1){rings.splice(i,1);continue}
+      fx.globalAlpha=(1-k)*.85; fx.strokeStyle=r.c; fx.lineWidth=1.6; fx.beginPath(); fx.arc(tp[0],tp[1],4+k*26,0,7); fx.stroke();
+    }
+    for(let i=sparks.length-1;i>=0;i--){
+      const s=sparks[i], t=now-s.born; if(t>650){sparks.splice(i,1);continue}
+      fx.globalAlpha=1-t/650; fx.fillStyle=s.c; fx.beginPath(); fx.arc(tp[0]+s.vx*t,tp[1]+s.vy*t,1.3,0,7); fx.fill();
+    }
+    fx.globalAlpha=1; fx.globalCompositeOperation="source-over";
+    fx.font='600 11px "IBM Plex Mono",monospace'; fx.fillStyle="#E9FCFF"; fx.fillText(site.name,tp[0]+12,tp[1]-10);
+  } else { rings.length=0; sparks.length=0 }
+  fx.globalAlpha=1; fx.globalCompositeOperation="source-over";
+}
+
+// ---------- panels (DOM APIs only: log text is attacker-controlled) ----------
+const tb=$("feed");
+function el(tag, props={}, text){const n=document.createElement(tag);Object.assign(n,props);if(text!=null)n.textContent=text;return n}
+function addFeedRow(e, fresh=true){
+  const t=TYPE[e.type]||TYPE.scan;
+  const tr=el("tr",{className:fresh?"new":""}); tr.style.setProperty("--c",t.c);
+  tr.append(el("td",{className:"t"},new Date(e.ts).toTimeString().slice(0,8)), el("td",{},e.ip), el("td",{},e.cc), el("td",{},t.k), el("td",{},e.port??"—"));
+  const dr=el("tr",{className:"d"}); dr.style.setProperty("--c",t.c);
+  const dd=el("td",{colSpan:5,title:e.detail||""},[e.country, e.sensor, e.detail].filter(Boolean).join(" · ")); dd.className="t"; dr.append(dd);
+  tb.prepend(dr); tb.prepend(tr);
+  while(tb.rows.length>80) tb.lastElementChild.remove();
+}
+function setNum(id,v){const n=$(id), t=fmt(v); if(n.textContent===t) return; const first=n.textContent==="–"; n.textContent=t;
+  if(!first&&!reduce){n.classList.remove("bump"); void n.offsetWidth; n.classList.add("bump")}}
+function renderStats(s){
+  setNum("kRate",s.per_min); setNum("kTotal",s.total_today); setNum("kIps",s.unique_ips); setNum("kCountries",s.countries);
+  const top=$("top"); top.replaceChildren();
+  const max=s.top[0]?.[2]||1;
+  if(!s.top.length) top.append(el("p",{className:"note"},"No attacks in the last 15 minutes."));
+  for(const [cc,name,n] of s.top){
+    const row=el("div",{className:"row"}), nm=el("span",{className:"nm"},name);
+    nm.style.setProperty("--w",(n/max*100).toFixed(0)+"%");
+    row.append(el("span",{className:"cc"},cc), nm, el("span",{className:"ct"},fmt(n))); top.append(row);
+  }
+  const sum=TYPES.reduce((a,t)=>a+(s.types[t.k]||0),0);
+  $("stack").replaceChildren(...TYPES.map(t=>{const d=el("div");d.style.flexGrow=s.types[t.k]||0;d.style.background=t.c;return d}));
+  $("types").replaceChildren(...TYPES.map(t=>{const d=el("div");const i=el("i");i.style.background=t.c;
+    d.append(i, document.createTextNode(t.name), el("em",{},sum?Math.round((s.types[t.k]||0)/sum*100)+"%":"–"));return d}));
+  $("typeTotal").textContent=fmt(sum)+" events · 15 min";
+  $("sampleNote").textContent = [s.demo?"Demo data":"", s.sampled?"High volume · map shows a sample, counts are complete":""].filter(Boolean).join(" · ");
+  const b=$("banner");
+  if(!s.geoip_ready){
+    b.replaceChildren(document.createTextNode("GeoIP database is not installed, so attacks cannot be placed on the map. "));
+    if(isAdmin) b.append(el("a",{href:"/settings#geoip"},"Open settings"));
+    b.hidden=false;
+  } else b.hidden=true;
+}
+let isAdmin=false;
+fetch("api/me").then(r=>r.json()).then(m=>{isAdmin=m.admin;$("settingsLink").hidden=!m.admin;if(!m.admin){const a=el("a",{className:"btn",href:"/login?next=/settings"},"Admin");$("settingsLink").after(a)}}).catch(()=>{});
+$("legend").replaceChildren(...TYPES.map(t=>{const s=el("span");const i=el("i");i.style.background=t.c;s.append(i,document.createTextNode(t.name));return s}));
+
+function setLive(state){
+  $("live").dataset.s=state;
+  $("liveTxt").textContent = paused ? "PAUSED" : {live:"LIVE",down:"RECONNECTING",connecting:"CONNECTING"}[state];
+}
+let conn="connecting";
+$("pause").onclick=e=>{paused=!paused;e.target.textContent=paused?"Resume":"Pause";setLive(conn)};
+
+// ---------- data ----------
+async function loadState(){
+  const res=await fetch("api/state",{cache:"no-store"});
+  if(res.status===401){location.href="/login";return}
+  const st=await res.json();
+  site=st.site; $("eyebrow").textContent=`${st.site.name} · inbound blocks and IDS alerts`;
+  layout(); renderStats(st.stats);
+  tb.replaceChildren(); st.recent.forEach(e=>addFeedRow(e,false));
+  const now=Date.now(); st.recent.filter(e=>now-e.ts<2000).forEach(e=>addArc(e,now-e.ts));
+}
+function connect(){
+  const es=new EventSource("events");
+  es.onopen=()=>{conn="live";setLive(conn)};
+  es.onerror=()=>{conn="down";setLive(conn)};
+  es.addEventListener("attack",m=>{if(paused)return;const e=JSON.parse(m.data);addArc(e);addFeedRow(e)});
+  es.addEventListener("stats",m=>renderStats(JSON.parse(m.data)));
+}
+setView(view);
+new ResizeObserver(()=>{if(proj)layout()}).observe(stage);
+try{await loadState()}catch(err){layout();conn="down";setLive(conn)}
+connect(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
